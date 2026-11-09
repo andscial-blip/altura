@@ -17,7 +17,7 @@ export default async function Page() {
   const mon = monday(today);
   const [rows, done, gl] = await Promise.all([planned(addDays(mon, -28), addDays(mon, 7 * 16)), runnaDone(addDays(mon, -7 * 8)), goals(true)]);
   if (!rows.length && !done.length) {
-    return <div className="stack-l"><Head title="Piano" sub="Programma Runna dal calendario iCal ufficiale." /><div className="card"><Empty icon="calendar" title="Nessuna seduta Runna" text="Il calendario iCal di Runna non è collegato o non contiene sedute. Serve l'indirizzo iCal su Vercel (RUNNA_ICS_URL)." action={{ href: "/impostazioni", label: "Vai ai collegamenti" }} /></div></div>;
+    return <div className="stack-l"><Head icon="calendar" title="Piano" sub="Programma Runna dal calendario iCal ufficiale." /><div className="card"><Empty icon="calendar" title="Nessuna seduta Runna" text="Il calendario iCal di Runna non è collegato o non contiene sedute. Serve l'indirizzo iCal su Vercel (RUNNA_ICS_URL)." action={{ href: "/impostazioni", label: "Vai ai collegamenti" }} /></div></div>;
   }
   const curWeek = rows.find((r) => r.day >= today)?.week ?? null;
   const planWeeks = Math.max(0, ...rows.map((r) => r.week ?? 0));
@@ -37,7 +37,7 @@ export default async function Page() {
 
   return (
     <div className="stack-l">
-      <Head title="Piano" sub={`Programma Runna${curWeek && planWeeks ? `, settimana ${curWeek} di ${planWeeks}` : ""}${race ? ` verso ${race.name}` : ""}.`}
+      <Head icon="calendar" title="Piano" sub={`Programma Runna${curWeek && planWeeks ? `, settimana ${curWeek} di ${planWeeks}` : ""}${race ? ` verso ${race.name}` : ""}.`}
         acts={<Link href="/obiettivi" className="btn sm"><Icon name="target" size={16} />Obiettivi</Link>} />
 
       <div className="kpis">

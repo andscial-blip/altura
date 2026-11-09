@@ -4,22 +4,24 @@ import { thumbs } from "@/lib/track";
 import { acwr, acwrZone } from "@/lib/analytics";
 import { isNum, mean, riegel, rolling, validDaily } from "@/lib/stats";
 import { todaySummary } from "@/lib/today";
-import { addDays, daysBetween, range } from "@/lib/dates";
+import { addDays, daysBetween, monday, range } from "@/lib/dates";
 import { ago, day, dec, dur, hm, int, km, SOURCE_LABEL, todayLocal } from "@/lib/fmt";
 import { Gauge, Spark, StackBars, TimeChart } from "@/components/charts";
 import { Card, Empty, Kpi, Legend, Num, TopBar } from "@/components/Head";
 import { ActCard, FAM_LABEL, SPORT_COLOR, StructBar } from "@/components/Act";
-import { Icon, sessionIcon, sportMeta } from "@/components/Icon";
+import { Icon, sportMeta } from "@/components/Icon";
 import { SyncOnOpen } from "@/components/SyncOnOpen";
 
 export const dynamic = "force-dynamic";
+const TYPE_LABEL: Record<string, string> = { facile: "Facile", qualita: "Qualità", lungo: "Lungo", gara: "Gara", test: "Test", forza: "Forza" };
+const TYPE_COLOR: Record<string, string> = { facile: "var(--z2)", qualita: "var(--z4)", lungo: "var(--run)", gara: "var(--sun)", test: "var(--sun)", forza: "var(--str)" };
 
 const M = ["hrv_night", "hrv_baseline_low", "hrv_baseline_high", "resting_hr", "sleep_s", "sleep_score", "body_battery_high", "body_battery_low"];
 
 export default async function Oggi() {
   const today = todayLocal();
-  const [dm, load, plan, gl, recent, syncs, week, bests] = await Promise.all([
-    dailyMulti(M, 40), dailyLoad(60), planned(today, addDays(today, 200)), goals(true), activities({ limit: 4 }), lastSyncs(), periodActs(addDays(today, -6)), runBests(90),
+  const [dm, load, plan, gl, recent, syncs, week, bests, monWeek] = await Promise.all([
+    dailyMulti(M, 40), dailyLoad(60), planned(today, addDays(today, 200)), goals(true), activities({ limit: 4 }), lastSyncs(), periodActs(addDays(today, -6)), runBests(90), periodActs(monday(today)),
   ]);
   const th = await thumbs(recent.map((a) => a.id));
 
@@ -62,7 +64,11 @@ export default async function Oggi() {
   const nights30 = sleep30.filter(isNum).length;
   const sleepAvg7 = rolling(sleep30.map((v) => (isNum(v) ? v / 3600 : null)), 7, 3);
   const syncErr = syncs.filter((s) => s.status === "error");
-  const st = next ? sessionIcon(next.type) : null;
+  const RUN = ["run", "trail_run", "treadmill"];
+  const mon = monday(today);
+  const weekDoneKm = monWeek.filter((a) => RUN.includes(a.sport)).reduce((x, a) => x + a.dist, 0) / 1000;
+  const weekPlanKm = plan.filter((p) => p.state === "programmato" && p.day >= today && p.day <= addDays(mon, 6) && !(p.day === today && monWeek.some((a) => a.day === today && RUN.includes(a.sport)))).reduce((x, p) => x + Number(p.km ?? 0), 0);
+  const agenda = plan.filter((p) => p.state === "programmato" && p.day >= today).slice(0, 4);
 
   return (
     <div className="stack-l">
@@ -151,17 +157,40 @@ export default async function Oggi() {
             </section>
           )}
 
-          <Card title="Prossima seduta" icon="calendar" className="o3" aside={<Link href="/piano">Piano</Link>}>
-            {next ? (
+          <Card title="Settimana di corsa" icon="calendar" className="o3" aside={<Link href="/piano">Piano</Link>}>
+            {next || weekDoneKm > 0 ? (
               <div className="stack">
-                <div className="row" style={{ flexWrap: "nowrap" }}>
-                  {st && <span className={`sp ${st.cls}`}><Icon name={st.icon} size={20} /></span>}
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{next.title}</div>
-                    <div className="note">{next.day === today ? "Oggi" : day(next.day)}{next.km ? ` · ${dec(next.km)} km` : ""}{next.duration_min_s ? ` · ${hm(next.duration_min_s)}–${hm(next.duration_max_s)} (Runna)` : ""}</div>
+                <div>
+                  <div className="row between" style={{ alignItems: "baseline" }}>
+                    <span className="note">Da lunedì</span>
+                    <span><Num v={dec(weekDoneKm, 1)} unit="km fatti" />{weekPlanKm > 0 && <span className="note"> + {dec(weekPlanKm, 1)} in programma</span>}</span>
                   </div>
+                  <div className="wkbar" role="img" aria-label={`${dec(weekDoneKm, 1)} km fatti da lunedì, ${dec(weekPlanKm, 1)} km ancora in programma su Runna`}>
+                    <i className="done" style={{ width: `${(weekDoneKm / Math.max(weekDoneKm + weekPlanKm, 0.1)) * 100}%` }} />
+                    <i className="plan" style={{ width: `${(weekPlanKm / Math.max(weekDoneKm + weekPlanKm, 0.1)) * 100}%` }} />
+                  </div>
+                  <div className="row between note" style={{ marginTop: 4 }}><span>fatti</span><span>+ in programma (Runna)</span><span className="mono">{dec(weekDoneKm + weekPlanKm, 0)} km</span></div>
                 </div>
-                <StructBar steps={next.structure?.steps} />
+                {agenda.length > 0 && (
+                  <ul className="agenda" aria-label="Prossime sedute">
+                    {agenda.map((p, k) => {
+                      const dd = daysBetween(today, p.day);
+                      return (
+                        <li key={p.key} style={{ borderLeftColor: TYPE_COLOR[p.type] ?? "var(--z2)" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="t">{p.title}</div>
+                            <div className="note">{TYPE_LABEL[p.type] ?? p.type}{p.km ? ` · ${dec(p.km)} km` : ""}{p.duration_min_s ? ` · ${hm(p.duration_min_s)}–${hm(p.duration_max_s)}` : ""}</div>
+                            {k === 0 && <div style={{ marginTop: 6 }}><StructBar steps={p.structure?.steps} /></div>}
+                          </div>
+                          <div className="when">
+                            <span className="mono">{day(p.day, { weekday: "short", day: "numeric" })}</span>
+                            <span className={`badge ${dd === 0 ? "warn" : ""}`}>{dd === 0 ? "oggi" : dd === 1 ? "domani" : `tra ${dd} gg`}</span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             ) : <Empty inline icon="calendar" title="Nessuna seduta in programma" text="Le sedute arrivano dal calendario iCal di Runna." action={{ href: "/impostazioni", label: "Collegamenti" }} />}
           </Card>

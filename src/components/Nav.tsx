@@ -27,6 +27,8 @@ export function Nav() {
   const p = usePathname();
   const cur = (h: string) => ((h === "/" ? p === "/" : p.startsWith(h)) ? "page" : undefined);
   // le schede orizzontali (sport, periodi) mostrano sempre quella attiva, anche se è in fondo alla fila
+  // cambio sezione: si riparte dall'alto (con il marchio visibile), non dal punto in cui Next porta il nuovo contenuto
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [p]);
   useEffect(() => {
     const show = () => document.querySelectorAll<HTMLElement>('.tabs [aria-current="true"]').forEach((el) => {
       const box = el.parentElement!; const l = el.offsetLeft - box.offsetLeft, r = l + el.offsetWidth;

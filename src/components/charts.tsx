@@ -18,19 +18,23 @@ function yScale(lo: number, hi: number) {
   return (v: number) => PAD + (1 - (v - lo) / (hi - lo || 1)) * (H - 2 * PAD);
 }
 
-function Frame({ height, yTicks, xTicks, tips, label, children, after, zoomHref }: {
-  height: number; yTicks: Axis[]; xTicks: { x: number; label: string }[]; tips: TipRow[]; label: string; children: React.ReactNode; after?: React.ReactNode; zoomHref?: string;
+function Frame({ height, yTicks, xTicks, tips, label, children, after, zoomHref, overlay, xAll = false }: {
+  height: number; yTicks: Axis[]; xTicks: { x: number; label: string; hl?: boolean }[]; tips: TipRow[]; label: string; children: React.ReactNode; after?: React.ReactNode; zoomHref?: string;
+  overlay?: React.ReactNode; xAll?: boolean;
 }) {
   return (
     <Tip tips={tips} label={label} zoomHref={zoomHref}>
       <div className="plot">
-        <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} aria-hidden="true">
-          <g aria-hidden="true">{yTicks.map((t) => <path key={t.v} d={`M0 ${f1(t.y)}H${W}`} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />)}</g>
-          {children}
-        </svg>
+        <div className="pl">
+          <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} aria-hidden="true">
+            <g aria-hidden="true">{yTicks.map((t) => <path key={t.v} d={`M0 ${f1(t.y)}H${W}`} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />)}</g>
+            {children}
+          </svg>
+          {overlay}
+        </div>
         <div className="yax" style={{ height }} aria-hidden="true">{yTicks.map((t) => <span key={t.v} style={{ top: `${t.y}%` }}>{t.label}</span>)}</div>
       </div>
-      <div className="xax" aria-hidden="true">{xTicks.map((t, i) => <span key={i} style={{ left: `${t.x * 100}%` }}>{t.label}</span>)}</div>
+      <div className={`xax${xAll ? " all" : ""}`} aria-hidden="true">{xTicks.map((t, i) => <span key={i} className={t.hl ? "hl" : undefined} style={{ left: `${t.x * 100}%` }}>{t.label}</span>)}</div>
       {after}
     </Tip>
   );
@@ -99,13 +103,14 @@ export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", hei
 }
 
 /** Barre per categoria (settimane), impilate per disciplina, con linea opzionale (media mobile). */
-export function StackBars({ cats, stacks, line, fmt, unit = "", height = 130, label, catLabel, highlight }: {
+export function StackBars({ cats, stacks, line, fmt, unit = "", height = 130, label, catLabel, highlight, valueFmt }: {
   cats: string[]; stacks: { name: string; color: string; values: number[] }[]; line?: { name: string; values: (number | null)[] } | null;
-  fmt: (v: number) => string; unit?: string; height?: number; label: string; catLabel: (c: string) => string; highlight?: number;
+  fmt: (v: number) => string; unit?: string; height?: number; label: string; catLabel: (c: string) => string; highlight?: number; valueFmt?: (v: number) => string;
 }) {
   const n = cats.length;
+  const labels = n <= 16;
   const tot = cats.map((_, i) => stacks.reduce((a, s) => a + (s.values[i] ?? 0), 0));
-  const hi = Math.max(...tot, ...(line?.values.filter(isNum) ?? []), 1) * 1.08;
+  const hi = Math.max(...tot, ...(line?.values.filter(isNum) ?? []), 1) * (labels ? 1.2 : 1.08);
   const Y = yScale(0, hi);
   const bw = W / n, sw = Math.max(3, Math.min(18, (300 / n) * 0.62));
   const ticks = niceTicks(0, hi, 3).filter((v) => v > 0 && v <= hi).map((v) => ({ v, y: Y(v), label: fmt(v) }));
@@ -116,15 +121,20 @@ export function StackBars({ cats, stacks, line, fmt, unit = "", height = 130, la
     s.values.forEach((v, i) => { if (v > 0) { const y0 = Y(acc[i]), y1 = Y(acc[i] + v); d += `M${f1(i * bw + bw / 2)} ${f1(y0 - (acc[i] > 0 ? 1.2 : 0))}V${f1(y1)}`; acc[i] += v; } });
     if (d) els.push(<path key={si} d={d} stroke={s.color} strokeWidth={sw} vectorEffect="non-scaling-stroke" />);
   });
-  if (highlight !== undefined && tot[highlight] > 0) els.push(<path key="hl" d={`M${f1(highlight * bw + bw / 2)} ${f1(Y(tot[highlight]) - 3)}h0`} stroke="var(--sun)" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />);
+  if (!labels && highlight !== undefined && tot[highlight] > 0) els.push(<path key="hl" d={`M${f1(highlight * bw + bw / 2)} ${f1(Y(tot[highlight]) - 3)}h0`} stroke="var(--sun)" strokeWidth="8" strokeLinecap="round" vectorEffect="non-scaling-stroke" />);
   if (line) {
     let d = "", pen = false;
     line.values.forEach((v, i) => { if (!isNum(v)) { pen = false; return; } d += `${pen ? "L" : "M"}${f1(i * bw + bw / 2)} ${f1(Y(v))}`; pen = true; });
     els.push(<path key="ln" d={d} fill="none" stroke="var(--ink)" strokeWidth="2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />);
   }
-  const xt = [0, Math.floor((n - 1) / 2), n - 1].map((i) => ({ x: (i + 0.5) / n, label: catLabel(cats[i]) }));
+  const every = n <= 8 ? 1 : n <= 16 ? 2 : 0;
+  const xt = every ? cats.map((c, i) => ({ i, x: (i + 0.5) / n, label: catLabel(c), hl: i === highlight })).filter((t) => (n - 1 - t.i) % every === 0)
+    : [0, Math.floor((n - 1) / 2), n - 1].map((i) => ({ x: (i + 0.5) / n, label: catLabel(cats[i]) }));
+  // valori scritti sopra le barre (leggibili senza asse e senza toccare)
+  const vf = valueFmt ?? ((v: number) => (v >= 10000 ? `${(v / 1000).toLocaleString("it-IT", { maximumFractionDigits: 0 })}k` : v >= 1000 ? `${(v / 1000).toLocaleString("it-IT", { maximumFractionDigits: 1 })}k` : fmt(v)));
+  const overlay = labels ? <div className="vlab" aria-hidden="true">{tot.map((v, i) => (v > 0 ? <span key={i} className={i === highlight ? "hl" : undefined} style={{ left: `${((i + 0.5) / n) * 100}%`, top: `${Y(v)}%` }}>{vf(v)}</span> : null))}</div> : null;
   const tips: TipRow[] = cats.map((c, i) => ({ x: (i + 0.5) / n, lines: [catLabel(c), ...stacks.filter((s) => s.values[i] > 0).map((s) => `${s.name} ${fmt(s.values[i])}${unit ? " " + unit : ""}`), ...(stacks.length > 1 ? [`Totale ${fmt(tot[i])}${unit ? " " + unit : ""}`] : []), ...(line && isNum(line.values[i]) ? [`${line.name} ${fmt(line.values[i] as number)}`] : [])] }));
-  return <Frame height={height} yTicks={ticks} xTicks={xt} tips={tips} label={label}>{els}</Frame>;
+  return <Frame height={height} yTicks={ticks} xTicks={xt} tips={tips} label={label} overlay={overlay} xAll={!!every}>{els}</Frame>;
 }
 
 /** Diagramma a dispersione con retta dei minimi quadrati. */

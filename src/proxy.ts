@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verify } from "@/lib/session";
 
 /** Tutto è privato tranne: pagina di accesso, API di accesso, ingresso dati con token, cron di Vercel, file statici. */
-const PUBLIC = [/^\/accesso/, /^\/api\/auth\//, /^\/api\/ingest\//, /^\/api\/cron\//, /^\/api\/health$/, /^\/manifest\.webmanifest$/, /^\/icons\//, /^\/favicon/];
+const PUBLIC = [/^\/accesso/, /^\/api\/auth\//, /^\/api\/ingest\//, /^\/api\/cron\//, /^\/api\/health$/, /^\/manifest\.webmanifest$/, /^\/icons\//, /^\/favicon/, /^\/sw\.js$/];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

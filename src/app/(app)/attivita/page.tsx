@@ -33,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
   return (
     <div className="stack-l">
-      <Head title="Attività" sub="Ogni uscita una volta sola, anche se arriva da più fonti. Nomi da Strava."
+      <Head icon="activity" title="Attività" sub="Ogni uscita una volta sola, anche se arriva da più fonti. Nomi da Strava."
         acts={<Link href="/mappa" className="btn sm"><Icon name="map" size={16} />Mappa</Link>} />
       <nav className="tabs" aria-label="Disciplina">
         {TABS.filter(([k]) => has(k)).map(([k, l, ic]) => <Link key={k} href={keep({ sport: k, p: "" })} aria-current={sport === k ? "true" : undefined} scroll={false}><Icon name={ic} size={16} />{l}</Link>)}

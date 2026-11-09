@@ -91,7 +91,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   const stLabel = (x?: { status: string }) => (!x ? ["mai", ""] : x.status === "ok" ? ["riuscita", "ok"] : x.status === "partial" ? ["parziale", "warn"] : x.status === "running" ? ["in corso", ""] : ["errore", "bad"]);
   return (
     <div className="stack-l">
-      <Head title="Impostazioni" sub="Collegamenti, storico, privacy e accesso." acts={<SyncOnOpen />} />
+      <Head icon="settings" title="Impostazioni" sub="Collegamenti, storico, privacy e accesso." acts={<SyncOnOpen />} />
 
       <Card title="Collegamenti" icon="sync" aside="chiavi solo sul server">
         <DataTable caption="Stato delle fonti" cols={[{ key: "f", label: "Fonte", lead: true }, { key: "how", label: "Come arrivano i dati" }, { key: "n", label: "Attività", r: true }, { key: "last", label: "Ultima sincronizzazione" }]}

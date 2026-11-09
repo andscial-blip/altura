@@ -31,7 +31,9 @@ export function TrackMap({ lines, heat = false, tall = false, color }: { lines: 
         mapRef.current = map;
         map.addControl(new ml.NavigationControl({ showCompass: false }), "bottom-right");
         const css = getComputedStyle(document.documentElement);
-        const line = color ?? (css.getPropertyValue("--run").trim() || "#3F6FB5");
+        // MapLibre non capisce le variabili CSS: "var(--run)" va risolto nel colore vero, altrimenti la linea non si disegna
+        const resolve = (c?: string) => { const m = c?.match(/^var\((--[a-z0-9-]+)\)$/); return m ? css.getPropertyValue(m[1]).trim() : c; };
+        const line = resolve(color) || css.getPropertyValue("--run").trim() || "#3F6FB5";
         map.on("load", () => {
           if (!map) return;
           if (SAT_KEY) {

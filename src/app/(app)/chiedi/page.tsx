@@ -13,7 +13,7 @@ const PROMPTS = [
 export default function Page() {
   return (
     <div className="stack-l">
-      <Head title="Chiedi a Claude" sub="Le domande sui tuoi dati si fanno a Claude, che legge il database di Altura con il connettore Supabase del tuo account." />
+      <Head icon="chat" title="Chiedi a Claude" sub="Le domande sui tuoi dati si fanno a Claude, che legge il database di Altura con il connettore Supabase del tuo account." />
       <div className="grid g2">
         <Card title="Come funziona" icon="chat">
           <ol className="stack" style={{ margin: 0, paddingLeft: 20 }}>

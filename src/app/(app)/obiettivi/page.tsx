@@ -45,7 +45,7 @@ export default async function Page() {
   const base = b10 ? { t: b10.s10!, d: 10000, label: "10 km" } : b5 ? { t: b5.s5!, d: 5000, label: "5 km" } : null;
   return (
     <div className="stack-l">
-      <Head title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
+      <Head icon="target" title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
       {goals.length === 0 && <div className="card"><Empty icon="target" title="Nessun obiettivo" text="Gare e test arrivano da Runna da soli; qui sotto puoi aggiungere volumi settimanali o dislivello." /></div>}
       <div className="grid g2">
         {goals.map((g) => {

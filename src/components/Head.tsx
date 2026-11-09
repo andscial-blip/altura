@@ -19,17 +19,20 @@ export function TopBar({ dark = false, children }: { dark?: boolean; children?: 
 }
 
 /** Intestazione di pagina: barra del telefono, poi ritorno, titolo, sottotitolo e azioni. */
-export function Head({ title, sub, back, acts, top }: {
-  title: React.ReactNode; sub?: React.ReactNode; back?: { href: string; label: string }; acts?: React.ReactNode; top?: React.ReactNode;
+export function Head({ title, sub, back, acts, top, icon }: {
+  title: React.ReactNode; sub?: React.ReactNode; back?: { href: string; label: string }; acts?: React.ReactNode; top?: React.ReactNode; icon?: string;
 }) {
   return (
     <header className="head">
       <TopBar>{top}</TopBar>
       <div className="head-main">
-        <div className="head-text">
-          {back && <Link href={back.href} className="back"><Icon name="back" size={18} />{back.label}</Link>}
-          <h1>{title}</h1>
-          {sub && <p className="sub">{sub}</p>}
+        <div className="head-id">
+          {icon && <span className="htile" aria-hidden="true"><Icon name={icon} size={24} /></span>}
+          <div className="head-text">
+            {back && <Link href={back.href} className="back"><Icon name="back" size={18} />{back.label}</Link>}
+            <h1>{title}</h1>
+            {sub && <p className="sub">{sub}</p>}
+          </div>
         </div>
         {acts && <div className="acts">{acts}</div>}
       </div>

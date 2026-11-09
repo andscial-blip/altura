@@ -15,7 +15,12 @@ export function Devices({ passkeys }: { passkeys: { id: string; device_label: st
       setMsg("Passkey aggiunta."); location.reload();
     } catch (e) { setMsg(e instanceof Error && e.name === "NotAllowedError" ? "Operazione annullata sul dispositivo." : (e as Error).message || "Non è stato possibile aggiungere la passkey: riprova."); }
   };
-  const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.href = "/accesso"; };
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    // via anche le copie delle pagine salvate sul dispositivo per l'avvio veloce
+    try { for (const k of await caches.keys()) if (k.startsWith("altura-")) await caches.delete(k); } catch { /* */ }
+    location.href = "/accesso";
+  };
   return (
     <section className="card" aria-labelledby="dev-h">
       <div className="card-h"><h2 id="dev-h">Accesso</h2><span className="aside">passkey</span></div>

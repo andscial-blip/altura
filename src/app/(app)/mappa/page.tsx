@@ -42,7 +42,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <div className="stack-l">
-      <Head back={{ href: "/attivita", label: "Attività" }} title="Mappa" sub="Dove ti alleni di più. Le zone private sono escluse." />
+      <Head icon="map" back={{ href: "/attivita", label: "Attività" }} title="Mappa" sub="Dove ti alleni di più. Le zone private sono escluse." />
       <nav className="tabs" aria-label="Disciplina">
         {Object.entries(FAM).filter(([k, f]) => k === "tutte" || k === s || f.sports.some((x) => present.includes(x))).map(([k, f]) => (
           <Link key={k} href={`/mappa?s=${k}&g=${g}`} aria-current={k === s ? "true" : undefined}><Icon name={f.icon} size={16} />{f.label}</Link>

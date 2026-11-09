@@ -2,15 +2,18 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { Icon } from "@/components/Icon";
+import { TopBar } from "@/components/Head";
 
 /** Errore in una schermata: spiega cosa è successo in parole semplici e offre come riprovare. Nessun dettaglio tecnico a schermo. */
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => { console.error("[Altura]", error.digest ?? error.message); }, [error]);
   const offline = typeof navigator !== "undefined" && !navigator.onLine;
   return (
-    <div className="card" style={{ marginTop: 24 }}>
+    <div className="stack-l" data-altura-error="">
+    <TopBar />
+    <div className="card" style={{ marginTop: 8 }}>
       <div className="es" role="alert">
-        <span className="ic" aria-hidden="true"><Icon name={offline ? "sync" : "heart"} size={24} /></span>
+        <span className="ic" aria-hidden="true"><Icon name="sync" size={24} /></span>
         <h3>{offline ? "Sei offline" : "Non riesco a caricare questa schermata"}</h3>
         <p>{offline
           ? "Altura legge i tuoi dati dal server: torna online e riprova."
@@ -21,6 +24,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         </div>
         {error.digest && <p className="note">Codice per l&apos;assistenza: {error.digest}</p>}
       </div>
+    </div>
     </div>
   );
 }
