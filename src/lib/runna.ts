@@ -52,11 +52,11 @@ export function runnaConfigured(): boolean {
 
 export async function syncRunna(): Promise<{ status: string; counts: Record<string, number>; message: string }> {
   const runId = await startRun("runna");
-  const counts = { events: 0, planned: 0, new: 0, moved: 0, removed: 0, completed: 0, linked_garmin: 0, matched: 0 };
+  const counts = { events: 0, planned: 0, new: 0, moved: 0, removed: 0, completed: 0, linked_garmin: 0, matched: 0, skipped: 0 };
   try {
     const raw = process.env.RUNNA_ICS_URL;
     if (!raw) throw new Error("Indirizzo iCal di Runna non configurato su Vercel (RUNNA_ICS_URL).");
-    const url = raw.trim().replace(/^webcal:\/\//i, "https://");
+    const url = raw.replace(/[\s\u200b-\u200d\u2060\ufeff]/g, "").replace(/^webcal:\/\//i, "https://");
     const res = await fetch(url, { headers: { "User-Agent": "altura/1.0", Accept: "text/calendar" }, cache: "no-store", signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`Runna ha risposto ${res.status} al feed del calendario`);
     const text = await res.text();
@@ -64,10 +64,15 @@ export async function syncRunna(): Promise<{ status: string; counts: Record<stri
     const events = icsEvents(text).filter((e) => e.status !== "cancelled");
     counts.events = events.length;
     const planned: Planned[] = [], completed: Completed[] = [];
+    let skipped = 0;
     for (const e of events) {
-      const [k, v] = parseEvent(e);
-      if (k === "planned") planned.push(v); else if (k === "completed") completed.push(v);
+      try {
+        const [k, v] = parseEvent(e);
+        if (k === "planned") { if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date)) { skipped++; continue; } planned.push(v); }
+        else if (k === "completed") { completedUtc(v); completed.push(v); }
+      } catch { skipped++; }
     }
+    counts.skipped = skipped;
     const now = new Date().toISOString();
 
     // sedute registrate (una per orario di partenza, come nell'app attuale)

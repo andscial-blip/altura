@@ -72,3 +72,10 @@ describe("abbinamenti Runna", () => {
     expect(linkPlanned({ date: "2026-11-07", title: "Corsa facile", type: "facile" }, pl)).toBeNull();
   });
 });
+
+describe("date strane nel feed", () => {
+  it("DTSTART con TZID ma solo data viene letto come giorno intero", () => {
+    const ev = icsEvents("BEGIN:VEVENT\r\nUID:x@r\r\nDTSTART;TZID=Europe/Rome:20261110\r\nSUMMARY:🏃 Corsa facile\r\nDESCRIPTION:Runna\r\nEND:VEVENT");
+    expect(ev[0].start).toEqual({ date: "2026-11-10" });
+  });
+});

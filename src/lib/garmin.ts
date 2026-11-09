@@ -39,7 +39,8 @@ function jwtExp(t: string): number {
 }
 
 async function token(force = false): Promise<string> {
-  const key = process.env.GARMIN_API_KEY;
+  // la chiave incollata può contenere spazi o caratteri invisibili (a capo, U+2028, BOM): si tolgono
+  const key = (process.env.GARMIN_API_KEY ?? "").replace(/[\s\u200b-\u200d\u2060\ufeff]/g, "");
   if (!key) throw new GarminError("Chiave Garmin non configurata su Vercel (GARMIN_API_KEY).", "config");
   if (!force) {
     const c = await getSetting<{ enc: string; exp: number }>("garmin_token");

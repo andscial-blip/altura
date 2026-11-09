@@ -16,8 +16,9 @@ export function icsEvents(text: string): IcsEvent[] {
     else lines.push(raw);
   }
   const unesc = (s: string) => s.replace(/\\[nN]/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
-  const tval = (k: string, v: string) => {
-    if (k.includes("VALUE=DATE") && v.length === 8) return { date: `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` };
+  const tval = (k: string, v: string): { date?: string; dateTime?: string; timeZone?: string | null } => {
+    v = v.trim();
+    if (/^\d{8}$/.test(v)) return { date: `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` };
     const base = `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T${v.slice(9, 11)}:${v.slice(11, 13)}:${v.slice(13, 15)}`;
     if (v.endsWith("Z")) return { dateTime: base + "Z" };
     const tz = /TZID=([^;:]+)/.exec(k);
