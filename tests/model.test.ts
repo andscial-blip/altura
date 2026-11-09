@@ -64,3 +64,15 @@ describe("mappature e utilità", () => {
     expect(r.hidden).toBe(2);
   });
 });
+
+import { mergeNorms as mn } from "@/lib/model";
+describe("nome dell'attività", () => {
+  it("viene da Strava anche se Garmin ha priorità sugli altri campi; il manuale vince", () => {
+    const g = { source: "garmin" as const, norm: { name: "Ambanja Corsa", distance_m: 10000 } };
+    const s = { source: "strava" as const, norm: { name: "Lungo nella valle del Sambirano", distance_m: 10100 } };
+    expect(mn([g, s]).fields).toMatchObject({ name: "Lungo nella valle del Sambirano", distance_m: 10000 });
+    expect(mn([g, s]).field_source.name).toBe("strava");
+    expect(mn([g, { source: "strava", norm: { name: null } }]).fields.name).toBe("Ambanja Corsa");
+    expect(mn([g, s, { source: "manual", norm: { name: "Corsa con Simo" } }]).fields.name).toBe("Corsa con Simo");
+  });
+});

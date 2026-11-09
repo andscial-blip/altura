@@ -1,7 +1,7 @@
 import "server-only";
 import { q, tx } from "@/lib/db";
 import { finishRun, sanitize, startRun, upsertActivity } from "@/lib/ingest";
-import { icsEvents, normTitle, parseEvent, type Completed, type Planned } from "@/lib/runna-parse";
+import { goalFromPlanned, icsEvents, normTitle, parseEvent, type Completed, type Planned } from "@/lib/runna-parse";
 
 /**
  * Runna: sola lettura del feed iCal ufficiale (RUNNA_ICS_URL, solo su Vercel). Nessuna API Runna esiste o viene simulata.
@@ -52,7 +52,7 @@ export function runnaConfigured(): boolean {
 
 export async function syncRunna(): Promise<{ status: string; counts: Record<string, number>; message: string }> {
   const runId = await startRun("runna");
-  const counts = { events: 0, planned: 0, new: 0, moved: 0, removed: 0, completed: 0, linked_garmin: 0, matched: 0, skipped: 0 };
+  const counts = { events: 0, planned: 0, new: 0, moved: 0, removed: 0, completed: 0, linked_garmin: 0, matched: 0, skipped: 0, goals: 0, goals_archived: 0 };
   try {
     const raw = process.env.RUNNA_ICS_URL;
     if (!raw) throw new Error("Indirizzo iCal di Runna non configurato su Vercel (RUNNA_ICS_URL).");
@@ -139,6 +139,22 @@ export async function syncRunna(): Promise<{ status: string; counts: Record<stri
         const it = list.find((x) => x.key === key); if (it) it.taken = true;
         counts.matched++;
       }
+      // obiettivi ricavati dal piano: gara e test; quelli tolti da Runna vengono archiviati
+      const gw = await cl.query<{ key: string; day: string; title: string; type: string; km: string | null; description: string | null; state: string }>(
+        "select key, to_char(day,'YYYY-MM-DD') as day, title, type, km::text, description, state from sport.planned_workouts where source='runna' and type in ('gara','test')");
+      const live: string[] = [];
+      for (const w of gw.rows) {
+        const g = goalFromPlanned(w);
+        if (!g || w.state === "rimosso") continue;
+        live.push(g.id);
+        await cl.query(
+          `insert into sport.goals(id, name, kind, sport, target_date, target, active) values ($1,$2,$3,'run',$4,$5::jsonb,true)
+           on conflict (id) do update set name = excluded.name, kind = excluded.kind, target_date = excluded.target_date, target = excluded.target`,
+          [g.id, g.name, g.kind, g.target_date, JSON.stringify(g.target)]);
+      }
+      const off = await cl.query("update sport.goals set active = false where id like 'runna:%' and active and not (id = any($1))", [live]);
+      counts.goals = live.length;
+      counts.goals_archived = off.rowCount ?? 0;
     });
     await finishRun(runId, "ok", counts);
     return { status: "ok", counts, message: "ok" };

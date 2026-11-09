@@ -259,3 +259,39 @@ export function pyRound(x: number, nd = 0): number {
 }
 
 export const normTitle = (t?: string | null) => (t ?? "").toLowerCase().replace(/\s*-\s*[\d.,]+\s*km$/, "").replace(/\s+/g, " ").trim();
+
+// ---------- obiettivi dal piano ----------
+
+export type RunnaGoal = {
+  id: string; name: string; kind: "gara" | "test"; target_date: string;
+  target: { dist_m: number | null; pace_min_s: number | null; pace_max_s: number | null; time_s: number | null; time_min_s: number | null; time_max_s: number | null };
+};
+
+const paceS = (m: string, s: string) => Number(m) * 60 + Number(s);
+
+/**
+ * La gara e i test del piano Runna diventano obiettivi. Distanza e ritmo vengono dal testo di Runna:
+ * "Mezza maratona su 4:25-4:35/km", "Prova a tempo di 5km a 4:05/km". Il tempo è distanza × ritmo (calcolato, non dichiarato da Runna).
+ */
+export function goalFromPlanned(p: { key: string; day: string; title: string; type: string; km: number | string | null; description: string | null }): RunnaGoal | null {
+  if (p.type !== "gara" && p.type !== "test") return null;
+  const d = (p.description ?? "").replace(/\s+/g, " ");
+  let distKm = p.km == null ? null : Number(p.km);
+  let pmin: number | null = null, pmax: number | null = null;
+  const range = /(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*\/\s*km/.exec(d);
+  const trial = /(?:prova a tempo|cronometro|time trial)[^.]*?di\s*(\d+(?:[.,]\d+)?)\s*km\s*a\s*(\d{1,2}):(\d{2})\s*\/\s*km/i.exec(d);
+  if (trial) { distKm = Number(trial[1].replace(",", ".")); pmin = pmax = paceS(trial[2], trial[3]); }
+  else if (range) { pmin = paceS(range[1], range[2]); pmax = paceS(range[3], range[4]); }
+  else {
+    const all = [...d.matchAll(/(\d{1,2}):(\d{2})\s*\/\s*km/g)];
+    const last = all[all.length - 1];
+    if (last) pmin = pmax = paceS(last[1], last[2]);
+  }
+  const dist_m = distKm && Number.isFinite(distKm) ? Math.round(distKm * 1000 * 10) / 10 : null;
+  const t = (pace: number | null) => (dist_m && pace ? Math.round((dist_m / 1000) * pace) : null);
+  const mid = pmin !== null && pmax !== null ? (pmin + pmax) / 2 : null;
+  return {
+    id: `runna:${p.key}`, name: p.title.trim(), kind: p.type, target_date: p.day,
+    target: { dist_m, pace_min_s: pmin, pace_max_s: pmax, time_s: t(mid), time_min_s: t(pmin), time_max_s: t(pmax) },
+  };
+}

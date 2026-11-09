@@ -44,13 +44,23 @@ export function sameActivity(a: { sport: string; start_utc: string }, b: { sport
  * Per ogni campo vince la fonte con priorità più alta che ha un valore non nullo.
  * primary_source = la fonte con priorità più alta tra quelle non manuali (chi ha registrato l'attività).
  */
+/**
+ * Eccezioni alla gerarchia per singolo campo. Il nome viene da Strava (lì il proprietario rinomina le uscite),
+ * poi da Garmin; una correzione manuale vince sempre.
+ */
+export const FIELD_PRIORITY: Partial<Record<ActivityField, Record<SourceId, number>>> = {
+  name: { manual: 4, strava: 3, garmin: 2, apple_health: 1, runna: 0 },
+};
+
 export function mergeNorms(list: { source: SourceId; norm: Norm }[]): { fields: Norm; primary_source: SourceId; field_source: Partial<Record<ActivityField, SourceId>> } {
   if (!list.length) throw new Error("mergeNorms: nessuna fonte");
   const sorted = [...list].sort((a, b) => SOURCE_PRIORITY[b.source] - SOURCE_PRIORITY[a.source]);
   const fields: Norm = {};
   const field_source: Partial<Record<ActivityField, SourceId>> = {};
   for (const f of ACTIVITY_FIELDS) {
-    for (const s of sorted) {
+    const fp = FIELD_PRIORITY[f];
+    const order = fp ? [...list].sort((a, b) => fp[b.source] - fp[a.source]) : sorted;
+    for (const s of order) {
       const v = s.norm[f];
       if (v !== null && v !== undefined && v !== "") {
         fields[f] = v;

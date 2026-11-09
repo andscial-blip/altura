@@ -42,10 +42,15 @@ export default async function Page() {
           let progress = "";
           if (g.kind === "volume" && g.target.km_week) progress = `Media ultime 4 settimane: ${dec(wk[0]?.km ?? 0)} km su ${dec(g.target.km_week)} km (${Math.round(((wk[0]?.km ?? 0) / g.target.km_week) * 100)}%).`;
           if (g.kind === "dislivello" && g.target.gain_week_m) progress = `Media ultime 4 settimane: ${Math.round(wk[0]?.gain ?? 0)} m su ${Math.round(g.target.gain_week_m)} m.`;
-          if (g.kind === "gara") progress = `${g.target.dist_m ? `${km(g.target.dist_m)} km` : ""}${g.target.time_s ? ` in ${dur(g.target.time_s)}` : ""}${g.target.dist_m && g.target.time_s ? `, ritmo ${dur(g.target.time_s / (g.target.dist_m / 1000))} /km` : ""}.`;
+          if (g.kind === "gara" || g.kind === "test") {
+            const t = g.target;
+            const range = t.time_min_s && t.time_max_s && t.time_min_s !== t.time_max_s;
+            const pace = t.pace_min_s && t.pace_max_s ? (t.pace_min_s === t.pace_max_s ? `${dur(t.pace_min_s)} /km` : `${dur(t.pace_min_s)}–${dur(t.pace_max_s)} /km`) : t.dist_m && t.time_s ? `${dur(t.time_s / (t.dist_m / 1000))} /km` : null;
+            progress = `${t.dist_m ? `${km(t.dist_m)} km` : ""}${range ? ` in ${dur(t.time_min_s!)}–${dur(t.time_max_s!)}` : t.time_s ? ` in ${dur(t.time_s)}` : ""}${pace ? `, ritmo ${pace}` : ""}.`;
+          }
           return (
             <section key={g.id} className="panel" style={{ opacity: g.active ? 1 : 0.6 }}>
-              <div className="row between"><h2>{g.name}</h2><form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn">{g.active ? "Archivia" : "Riattiva"}</button></form></div>
+              <div className="row between"><h2>{g.name}</h2>{g.id.startsWith("runna:") && <span className="state ok">{g.kind === "test" ? "Test" : "Gara"} · da Runna</span>}<form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn">{g.active ? "Archivia" : "Riattiva"}</button></form></div>
               <p>{progress}</p>
               {g.target_date && <p className="note">{day(g.target_date, { day: "numeric", month: "long", year: "numeric" })}{weeksLeft !== null && weeksLeft >= 0 ? `, tra ${weeksLeft} settimane` : ""}</p>}
             </section>

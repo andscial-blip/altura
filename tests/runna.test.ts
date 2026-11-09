@@ -79,3 +79,19 @@ describe("date strane nel feed", () => {
     expect(ev[0].start).toEqual({ date: "2026-11-10" });
   });
 });
+
+import { goalFromPlanned } from "@/lib/runna-parse";
+describe("obiettivi dal piano Runna", () => {
+  it("gara con intervallo di ritmo", () => {
+    const g = goalFromPlanned({ key: "w14_RACE_1", day: "2027-02-14", title: "Zero Wind Romeo e Giulietta Half Marathon", type: "gara", km: "21.1", description: "Mezza maratona su 4:25-4:35/km" })!;
+    expect(g).toMatchObject({ id: "runna:w14_RACE_1", kind: "gara", target_date: "2027-02-14" });
+    expect(g.target).toEqual({ dist_m: 21100, pace_min_s: 265, pace_max_s: 275, time_s: 5697, time_min_s: 5592, time_max_s: 5803 });
+  });
+  it("cronometro: distanza e ritmo della prova, non della seduta intera né del riscaldamento", () => {
+    const g = goalFromPlanned({ key: "w9_TIME_TRIAL_1", day: "2027-01-08", title: "Cronometro di 5 km", type: "test", km: "6.5", description: "1km di riscaldamento a passo conversazionale (non più veloce di 5:15/km), Camminata di riposo di 120 s\n\nProva a tempo di 5km a 4:05/km, Camminata di riposo di 120 s\n\n500m raffreddare" })!;
+    expect(g.target).toMatchObject({ dist_m: 5000, pace_min_s: 245, time_s: 1225 });
+  });
+  it("le sedute normali non sono obiettivi", () => {
+    expect(goalFromPlanned({ key: "x", day: "2026-11-10", title: "Corsa facile", type: "facile", km: 8, description: "" })).toBeNull();
+  });
+});
