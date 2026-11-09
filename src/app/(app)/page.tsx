@@ -81,11 +81,8 @@ export default async function Oggi() {
           </div>
           <span className="only-d"><SyncOnOpen variant="icon" /></span>
         </div>
-        <ul className="status" aria-label="Stato">
-          <li><i className={sum.level === "ok" ? "" : "warn"} aria-hidden="true" />{sum.title}</li>
-          {ratio !== null && <li><i className={zone.cls === "ok" ? "" : "warn"} aria-hidden="true" />{zone.label[0].toUpperCase() + zone.label.slice(1)}</li>}
-          <li><i className={syncErr.length ? "warn" : ""} aria-hidden="true" />{syncErr.length ? `Errore da ${syncErr.map((s) => SOURCE_LABEL[s.source]).join(", ")}` : `Dati aggiornati ${ago(syncs.map((s) => s.finished_at ?? s.started_at).sort().at(-1))}`}</li>
-        </ul>
+        {/* niente etichette di stato: la sintesi è nella scheda sotto; resta solo l'avviso se una fonte non si sincronizza */}
+        {syncErr.length > 0 && <ul className="status" aria-label="Stato"><li><i className="warn" aria-hidden="true" />{`Errore da ${syncErr.map((s) => SOURCE_LABEL[s.source]).join(", ")}`}</li></ul>}
         <div className="kpis">
           <Kpi dark label="Variabilità notte" icon="hrv" value={hrv ? int(hrv.value) : "–"} unit="ms" foot={lo && hi ? `fascia ${int(lo.value)}–${int(hi.value)}` : when(hrv)}><Spark values={ser("hrv_night")} /></Kpi>
           <Kpi dark label="Battito a riposo" icon="heart" value={rhr ? int(rhr.value) : "–"} unit="bpm" foot={when(rhr)}><Spark values={ser("resting_hr")} /></Kpi>
