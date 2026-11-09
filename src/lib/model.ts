@@ -100,13 +100,13 @@ export function sportFromStrava(t: string | null | undefined): Sport {
 /** HKWorkoutActivityType (nome inglese mandato da Comandi Rapidi) → sport comune. */
 export function sportFromApple(t: string | null | undefined): Sport {
   const k = (t ?? "").toLowerCase();
-  if (k.includes("run")) return "run";
-  if (k.includes("hik")) return "hike";
-  if (k.includes("walk")) return "walk";
-  if (k.includes("cycl")) return "ride";
-  if (k.includes("swim")) return "swim";
-  if (k.includes("strength") || k.includes("functional") || k.includes("hiit") || k.includes("core")) return "strength";
-  if (k.includes("ski") || k.includes("snowboard")) return "ski";
+  if (k.includes("run") || k.includes("corsa")) return k.includes("trail") ? "trail_run" : "run";
+  if (k.includes("hik") || k.includes("escursion")) return "hike";
+  if (k.includes("walk") || k.includes("cammin")) return "walk";
+  if (k.includes("cycl") || k.includes("cicl") || k.includes("bici")) return "ride";
+  if (k.includes("swim") || k.includes("nuoto")) return "swim";
+  if (k.includes("strength") || k.includes("functional") || k.includes("hiit") || k.includes("core") || k.includes("forza") || k.includes("funzional")) return "strength";
+  if (k.includes("ski") || k.includes("sci") || k.includes("snowboard")) return "ski";
   if (k.includes("yoga") || k.includes("pilates")) return "yoga";
   return "other";
 }

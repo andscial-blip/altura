@@ -43,3 +43,40 @@ describe("Apple Salute", () => {
     expect(HealthPayload.safeParse({ daily: [{ day: "8/11/2026", metric: "steps", value: 1 }] }).success).toBe(false);
   });
 });
+
+import { SeriesPayload, fromSeries, itNumber, parseDate, asList } from "@/lib/apple";
+describe("formato a colonne di Comandi Rapidi", () => {
+  it("numeri e date in italiano", () => {
+    expect(itNumber("1.234,5")).toBe(1234.5);
+    expect(itNumber("7,5 km")).toBe(7.5);
+    expect(itNumber("12.450")).toBe(12450);
+    expect(itNumber("61 ms")).toBe(61);
+    expect(parseDate("2026-11-08T06:30:00+03:00")).toBe("2026-11-08T03:30:00.000Z");
+    expect(parseDate("8 nov 2026, 06:30", "Indian/Antananarivo")).toBe("2026-11-08T03:30:00.000Z");
+    expect(parseDate("08/11/2026, 06:30", "Europe/Rome")).toBe("2026-11-08T05:30:00.000Z");
+    expect(parseDate("ieri")).toBeNull();
+    expect(asList("a\nb")).toEqual(["a", "b"]);
+    expect(asList(5)).toEqual(["5"]);
+  });
+  it("passi raggruppati per giorno, battito, sonno e allenamenti", () => {
+    const sp = SeriesPayload.parse({
+      tz: "UTC",
+      series: {
+        steps: { values: ["8.120", "11.034"], dates: ["2026-11-07T00:00:00Z", "2026-11-08T00:00:00Z"] },
+        resting_hr: { values: [48], dates: "2026-11-08T07:00:00Z" },
+        sleep: { values: ["Core", "Deep", "In letto"], dates: ["2026-11-07T21:00:00Z", "2026-11-08T01:00:00Z", "2026-11-07T20:30:00Z"], ends: ["2026-11-08T01:00:00Z", "2026-11-08T03:00:00Z", "2026-11-08T04:00:00Z"] },
+        boh: { values: [1], dates: ["2026-11-08"] },
+      },
+      workouts: { types: ["Corsa", "Allenamento funzionale per la forza"], starts: ["2026-11-08T03:00:00Z", "2026-11-08T15:00:00Z"], ends: ["2026-11-08T03:50:00Z", "2026-11-08T15:40:00Z"], distances: ["9,2 km", ""] },
+    });
+    const { payload, warnings } = fromSeries(sp);
+    const rows = samplesToDaily(payload, "UTC");
+    const g = (m: string, d: string) => rows.find((r) => r.metric === m && r.day === d)?.value;
+    expect(g("steps", "2026-11-08")).toBe(11034);
+    expect(g("resting_hr", "2026-11-08")).toBe(48);
+    expect(g("sleep_s", "2026-11-08")).toBe(6 * 3600);
+    expect(warnings).toContain("metrica sconosciuta: boh");
+    expect(payload.workouts?.map((w) => workoutNorm(w).norm.sport)).toEqual(["run", "strength"]);
+    expect(workoutNorm(payload.workouts![0]).norm.distance_m).toBe(9200);
+  });
+});
