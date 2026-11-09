@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
   icons: { icon: "/icons/icon.svg", apple: "/icons/apple-touch-icon.png" },
 };
-export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#ECEEF3" }, { media: "(prefers-color-scheme: dark)", color: "#15161D" }], width: "device-width", initialScale: 1, viewportFit: "cover" };
+export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F5F7F9" }, { media: "(prefers-color-scheme: dark)", color: "#1B2433" }], width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

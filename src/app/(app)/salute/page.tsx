@@ -42,7 +42,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ g
                 <h2>{c?.label_it ?? s.metric}</h2>
                 <span className="metric"><span className="v" style={{ fontSize: "1.25rem" }}>{s.fmt(last.value)}</span><span className="u">{c?.unit === "s" ? "" : c?.unit}</span></span>
               </div>
-              <LineChart points={pts.map((p) => ({ x: p.day, y: p.value }))} color={s.color} fmt={s.fmt} band={lo !== undefined && hi !== undefined ? { lo, hi } : null} yLabel={c?.label_it} />
+              <LineChart points={pts.map((p) => ({ x: p.day, y: p.value }))} color={s.color} fmt={s.fmt} band={lo !== undefined && hi !== undefined ? { lo, hi } : null} yLabel={c?.label_it} width={440} height={190} />
               <p className="note">
                 Media del periodo {s.fmt(mean)}. {KIND_LABEL[c?.kind ?? "misura"]}, da {srcs.map((x) => SOURCE_LABEL[x]).join(" e ")}.
                 {band && lo !== undefined ? ` La fascia colorata è il tuo intervallo abituale calcolato da Garmin (${dec(lo, 0)}–${dec(hi, 0)} ms).` : ""}

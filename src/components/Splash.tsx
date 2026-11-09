@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Mark } from "@/components/Mark";
+import { Mark, Wordmark } from "@/components/Mark";
 
 /** Schermata d'avvio: solo all'avvio a freddo (prima apertura della sessione del browser), almeno 5 secondi. */
 const MIN_MS = 5000;
@@ -18,8 +18,8 @@ export function Splash() {
   return (
     <div className={`splash${phase === "out" ? " out" : ""}`} role="status" aria-label="Altura si sta aprendo">
       <div className="inner">
-        <Mark size={96} draw />
-        <div className="word">Altura</div>
+        <Mark size={104} tone="aqua" lanes="#FFFFFF" animate />
+        <Wordmark height={44} color="#2E3D52" />
         <div className="motto">Know your edge</div>
       </div>
     </div>

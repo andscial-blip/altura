@@ -1,20 +1,24 @@
 /* Altura — token del design system. Palette provvisoria (direzione "Enrosadira" del panel): si sostituisce qui sola. */
 :root {
-  --bg: #ECEEF3;
-  --surface: #F7F7FA;
-  --surface-2: #E3E6EE;
-  --ink: #22232F;
-  --muted: #5B6070;
-  --line: #D4D8E1;
-  --accent: #B95E51;
+  /* Palette di famiglia con Cairn: blu notte, verde acqua, giallo vetta su fondo chiaro (round 4, variante A in attesa di conferma) */
+  --bg: #F5F7F9;
+  --surface: #FFFFFF;
+  --surface-2: #EDF1F4;
+  --ink: #2E3D52;
+  --muted: #5E6B7C;
+  --line: #DCE2E8;
+  --accent: #2F7F6E;       /* verde acqua scuro: testo, link, pulsanti (bianco sopra: 4,9:1) */
   --accent-ink: #FFFFFF;
-  --sky: #4A7AB8;
-  --sage: #647F3E;
-  --warn: #A8641C;
-  --bad: #B23A3A;
+  --aqua: #4FB09C;         /* verde acqua del marchio: superfici e grafiche */
+  --sun: #F2B93B;          /* giallo vetta: "tu oggi", evidenze */
+  --night: #2E3D52;
+  --sky: #3F6FB5;
+  --sage: #2F7F6E;
+  --warn: #A86A00;
+  --bad: #C2412F;
   --splash-bg: #FFFFFF;
-  /* serie dei grafici (validate_palette: tutti i controlli superati, chiaro e scuro) */
-  --s1: #C4675A; --s2: #3F78C0; --s3: #5E8A2A; --s4: #8A62C8; --s0: #8A8F9C;
+  /* serie dei grafici (validate_palette: superato in chiaro e scuro; il quarto colore ha sempre legenda) */
+  --s1: #E0604C; --s2: #2A9A83; --s3: #3F6FB5; --s4: #C98A0E; --s0: #8A94A3;
 
   --r-s: 6px;
   --r-m: 12px;
@@ -25,9 +29,9 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #15161D; --surface: #1E1F28; --surface-2: #292B36; --ink: #E8E7EE; --muted: #A3A7B5; --line: #343745;
-    --accent: #EE9A8B; --accent-ink: #22232F; --sky: #8FB3E0; --sage: #A3BF7A; --warn: #E3A35E; --bad: #F08A8A;
-    --s1: #D4705F; --s2: #4F8ADA; --s3: #6E9C34; --s4: #9573DC; --s0: #7D8291;
+    --bg: #1B2433; --surface: #243044; --surface-2: #2C3A52; --ink: #E9EEF3; --muted: #A9B4C2; --line: #34425A;
+    --accent: #6CC7B3; --accent-ink: #14332C; --aqua: #4FB09C; --sun: #F2B93B; --night: #2E3D52; --sky: #7FA6E3; --sage: #6CC7B3; --warn: #E8B04A; --bad: #F08A78;
+    --s1: #D9614D; --s2: #2E9C85; --s3: #4F80D0; --s4: #B7820F; --s0: #7D8796;
     color-scheme: dark;
   }
 }
@@ -50,17 +54,17 @@ small, .muted { color: var(--muted); }
 .num { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 
 /* struttura: barra laterale su schermi larghi, barra in basso su telefono */
-.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100dvh; }
+.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100dvh; }
 .rail { position: sticky; top: 0; height: 100dvh; padding: 24px 16px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
 .rail .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.125rem; padding: 0 10px 20px; text-decoration: none; }
 .rail a.nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--r-s); text-decoration: none; color: var(--muted); }
 .rail a.nav[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
 .rail a.nav:hover { color: var(--ink); }
 .rail .foot { margin-top: auto; font-size: 0.8125rem; color: var(--muted); padding: 0 10px; }
-main.page { padding: 28px 32px 64px; max-width: 1180px; width: 100%; }
+main.page { padding: 28px 32px 64px; max-width: 1180px; width: 100%; min-width: 0; }
 .tabbar { display: none; }
 @media (max-width: 820px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
   .rail { display: none; }
   main.page { padding: 20px 16px 96px; }
   .tabbar {
@@ -95,10 +99,10 @@ main.page { padding: 28px 32px 64px; max-width: 1180px; width: 100%; }
 .metric .l { font-size: 0.875rem; color: var(--muted); }
 .src { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; color: var(--muted); }
 .src i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
-.src[data-s="garmin"] i { background: var(--sky); }
+.src[data-s="garmin"] i { background: var(--aqua); }
 .src[data-s="strava"] i { background: #E07A3F; }
-.src[data-s="runna"] i { background: var(--sage); }
-.src[data-s="apple_health"] i { background: var(--accent); }
+.src[data-s="runna"] i { background: var(--sun); }
+.src[data-s="apple_health"] i { background: var(--s1); }
 .kind { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; }
 
 /* tabelle */
@@ -132,14 +136,18 @@ input.in, select.in, textarea.in { font: inherit; color: var(--ink); background:
 /* splash */
 .splash { position: fixed; inset: 0; z-index: 100; background: var(--splash-bg); display: grid; place-items: center; transition: opacity .5s ease; }
 .splash.out { opacity: 0; pointer-events: none; }
-.splash .inner { display: flex; flex-direction: column; align-items: center; gap: 18px; color: #22232F; }
-.splash .motto { font-size: 1rem; letter-spacing: 0.02em; color: #5B6070; opacity: 0; animation: splashIn 1.2s ease 0.9s forwards; }
+.splash .inner { display: flex; flex-direction: column; align-items: center; gap: 18px; color: #2E3D52; }
+.splash .motto { font-size: 1rem; letter-spacing: 0.02em; color: #2F7F6E; opacity: 0; animation: splashIn 1.2s ease 0.9s forwards; }
 .splash .word { font-size: 2rem; font-weight: 600; letter-spacing: -0.02em; }
-.splash svg .draw { stroke-dasharray: 400; stroke-dashoffset: 400; animation: draw 1.6s cubic-bezier(.6,.1,.2,1) .2s forwards; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
+.splash .mk .body { transform-origin: 18px 82px; transform: scale(.6); opacity: 0; animation: grow .9s cubic-bezier(.2,.7,.2,1) .15s forwards; }
+.splash .mk .lane { stroke-dasharray: 120; stroke-dashoffset: 120; animation: lane 1s ease .7s forwards; }
+.splash .mk .dot { transform-origin: 58px 42px; transform: scale(0); animation: pop .45s cubic-bezier(.3,1.6,.5,1) 1.5s forwards; }
+@keyframes grow { to { transform: scale(1); opacity: 1; } }
+@keyframes lane { to { stroke-dashoffset: 0; } }
+@keyframes pop { to { transform: scale(1); } }
 @keyframes splashIn { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .splash svg .draw { animation: none; stroke-dashoffset: 0; }
+  .splash .mk .body, .splash .mk .lane, .splash .mk .dot { animation: none; transform: none; opacity: 1; stroke-dashoffset: 0; }
   .splash .motto { animation: none; opacity: 1; }
   .splash { transition: none; }
 }
@@ -153,3 +161,4 @@ svg.chart .grid line { stroke: var(--line); }
 
 .map { width: 100%; height: 420px; border-radius: var(--r-m); overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
 @media (max-width: 640px) { .map { height: 320px; } }
+code { overflow-wrap: anywhere; font-size: 0.875em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }

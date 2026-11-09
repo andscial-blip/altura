@@ -22,3 +22,8 @@ describe("calcoli derivati", () => {
     expect(trend([0, 1], [1, 2])).toBeNull();
   });
 });
+
+import { niceMax } from "@/components/charts";
+describe("assi", () => {
+  it("massimi tondi", () => { expect(niceMax(57)).toBe(60); expect(niceMax(43)).toBe(50); expect(niceMax(10.7)).toBe(15); expect(niceMax(2040)).toBe(2500); });
+});

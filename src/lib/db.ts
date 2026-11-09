@@ -17,7 +17,8 @@ function pool(): Pool {
       max: 3,
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 8_000,
-      ssl: { rejectUnauthorized: false },
+      // Supabase richiede TLS; il database locale dei test d'integrazione no (sslmode=disable nell'URL)
+      ssl: /sslmode=disable/.test(url) ? false : { rejectUnauthorized: false },
     });
   }
   return g.__alturaPool;

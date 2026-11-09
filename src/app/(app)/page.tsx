@@ -70,7 +70,7 @@ export default async function Oggi() {
               <div className="row note" style={{ gap: 14 }}>{p.km && <span>{dec(p.km)} km</span>}{p.duration_min_s && <span>{hm(p.duration_min_s)}–{hm(p.duration_max_s)}</span>}<Src s="runna" /></div>
             </div>
           )) : <p className="empty">Nessuna seduta Runna in arrivo, oppure il calendario Runna non è ancora collegato.</p>}
-          <p className="note" style={{ marginTop: 12 }}>Questa settimana: {km(runKm)} km di corsa, {int(gain)} m di dislivello.</p>
+          <p className="note" style={{ marginTop: 12 }}>Da lunedì: {km(runKm)} km di corsa, {int(gain)} m di dislivello.</p>
         </div>
       </section>
 

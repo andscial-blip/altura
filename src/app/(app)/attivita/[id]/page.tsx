@@ -94,7 +94,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <thead><tr><th>Campo</th><th>Valore usato</th>{sources.map((x) => <th key={x.source}>{SOURCE_LABEL[x.source]}</th>)}</tr></thead>
           <tbody>
             {(Object.keys(FIELD_LABEL) as (keyof typeof FIELD_LABEL)[]).filter((f) => sources.some((x) => x.norm[f] !== null && x.norm[f] !== undefined)).map((f) => (
-              <tr key={f}><td>{FIELD_LABEL[f]}</td><td>{field_source[f] ? SOURCE_LABEL[field_source[f]!] : "–"}</td>{sources.map((x) => <td key={x.source}>{x.norm[f] === null || x.norm[f] === undefined ? "–" : String(x.norm[f])}</td>)}</tr>
+              <tr key={f}><td>{FIELD_LABEL[f]}</td><td>{field_source[f] ? SOURCE_LABEL[field_source[f]!] : "–"}</td>{sources.map((x) => { const v = x.norm[f]; return <td key={x.source}>{v === null || v === undefined ? "–" : typeof v === "number" ? v.toLocaleString("it-IT") : f === "sport" ? sportLabel(String(v)) : String(v)}</td>; })}</tr>
             ))}
             <tr><td>Acquisizione</td><td></td>{sources.map((x) => <td key={x.source}>{x.acquisition}, {when(x.fetched_at)}</td>)}</tr>
           </tbody>

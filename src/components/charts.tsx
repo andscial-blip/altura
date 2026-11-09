@@ -3,10 +3,18 @@ import { day } from "@/lib/fmt";
 
 type P = { x: string; y: number | null; tip?: string };
 
-export function LineChart({ points, height = 160, color = "var(--s2)", band, fmt = (v: number) => String(Math.round(v)), yLabel }: {
-  points: P[]; height?: number; color?: string; band?: { lo: number; hi: number } | null; fmt?: (v: number) => string; yLabel?: string;
+/** Massimo "tondo" per gli assi (1; 1,5; 2; 2,5; 3; 4; 5; 6; 8; 10 × 10^n). */
+export function niceMax(v: number): number {
+  if (!(v > 0)) return 1;
+  const e = 10 ** Math.floor(Math.log10(v)), f = v / e;
+  const steps = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+  return (steps.find((x) => f <= x + 1e-9) ?? 10) * e;
+}
+
+export function LineChart({ points, height = 160, color = "var(--s2)", band, fmt = (v: number) => String(Math.round(v)), yLabel, width = 640 }: {
+  points: P[]; height?: number; color?: string; band?: { lo: number; hi: number } | null; fmt?: (v: number) => string; yLabel?: string; width?: number;
 }) {
-  const W = 640, H = height, L = 40, R = 10, T = 10, B = 22;
+  const W = width, H = height, L = 40, R = 10, T = 10, B = 22;
   const ys = points.map((p) => p.y).filter((v): v is number => v !== null);
   if (ys.length < 2) return <p className="empty">Dati insufficienti per un andamento.</p>;
   let lo = Math.min(...ys, band?.lo ?? Infinity), hi = Math.max(...ys, band?.hi ?? -Infinity);
@@ -23,7 +31,7 @@ export function LineChart({ points, height = 160, color = "var(--s2)", band, fmt
       <g className="grid">{ticks.map((t, i) => <line key={i} x1={L} x2={W - R} y1={y(t)} y2={y(t)} />)}</g>
       {ticks.map((t, i) => <text key={i} x={L - 6} y={y(t) + 4} textAnchor="end">{fmt(t)}</text>)}
       {xt.map((i) => points[i] && <text key={i} x={x(i)} y={H - 4} textAnchor={i === 0 ? "start" : i === points.length - 1 ? "end" : "middle"}>{day(points[i].x, { day: "numeric", month: "short" })}</text>)}
-      {band && <rect x={L} width={W - L - R} y={y(band.hi)} height={Math.max(0, y(band.lo) - y(band.hi))} fill={color} opacity="0.1" />}
+      {band && <rect x={L} width={W - L - R} y={y(band.hi)} height={Math.max(0, y(band.lo) - y(band.hi))} fill="var(--aqua)" opacity="0.13" />}
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {points.map((p, i) => p.y === null ? null : (
         <g key={i}><circle cx={x(i)} cy={y(p.y)} r="7" fill="transparent"><title>{`${day(p.x)}: ${p.tip ?? fmt(p.y)}`}</title></circle></g>
@@ -37,20 +45,21 @@ export const FAM_COLOR: Record<string, string> = { corsa: "var(--s1)", montagna:
 export const FAM_LABEL: Record<string, string> = { corsa: "Corsa", montagna: "Montagna e cammino", bici: "Bici", forza: "Forza", altro: "Altro" };
 
 /** Barre impilate per settimana. value(r) dà il valore della riga; fmt lo formatta. */
-export function WeekBars<R extends { week: string; fam: string }>({ rows, weeks, value, fmt, height = 180, label }: {
-  rows: R[]; weeks: string[]; value: (r: R) => number; fmt: (v: number) => string; height?: number; label: string;
+export function WeekBars<R extends { week: string; fam: string }>({ rows, weeks, value, fmt, height = 180, label, width = 640 }: {
+  rows: R[]; weeks: string[]; value: (r: R) => number; fmt: (v: number) => string; height?: number; label: string; width?: number;
 }) {
-  const W = 640, H = height, L = 40, R = 6, T = 8, B = 22;
+  const W = width, H = height, L = 48, R = 6, T = 8, B = 22;
   const fams = Object.keys(FAM_COLOR).filter((f) => rows.some((r) => r.fam === f && value(r) > 0));
   const tot = weeks.map((w) => rows.filter((r) => r.week === w).reduce((a, r) => a + value(r), 0));
-  const max = Math.max(1, ...tot) * 1.1;
+  const top = niceMax(Math.max(...tot, 0) || 1);
+  const max = top * 1.04;
   const bw = (W - L - R) / weeks.length;
   const y = (v: number) => T + (1 - v / max) * (H - T - B);
   return (
     <div>
       <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
-        <g className="grid">{[0.5, 1].map((f) => <line key={f} x1={L} x2={W - R} y1={y(max / 1.1 * f)} y2={y(max / 1.1 * f)} />)}</g>
-        {[0.5, 1].map((f) => <text key={f} x={L - 6} y={y(max / 1.1 * f) + 4} textAnchor="end">{fmt(max / 1.1 * f)}</text>)}
+        <g className="grid">{[0.5, 1].map((f) => <line key={f} x1={L} x2={W - R} y1={y(top * f)} y2={y(top * f)} />)}</g>
+        {[0.5, 1].map((f) => <text key={f} x={L - 6} y={y(top * f) + 4} textAnchor="end">{fmt(top * f)}</text>)}
         {weeks.map((w, i) => {
           let acc = 0;
           return (
@@ -62,7 +71,7 @@ export function WeekBars<R extends { week: string; fam: string }>({ rows, weeks,
                 const y0 = y(acc), y1 = y(acc + v); acc += v;
                 return <rect key={f} x={L + i * bw + 2} width={Math.max(2, bw - 4)} y={y1} height={Math.max(0, y0 - y1 - 2)} rx="3" fill={FAM_COLOR[f]}><title>{`Settimana del ${day(w, { day: "numeric", month: "short" })} · ${FAM_LABEL[f]}: ${fmt(v)}`}</title></rect>;
               })}
-              {(i % Math.ceil(weeks.length / 6) === 0 || i === weeks.length - 1) && <text x={L + i * bw + bw / 2} y={H - 4} textAnchor="middle">{day(w, { day: "numeric", month: "short" })}</text>}
+              {(weeks.length - 1 - i) % Math.ceil(weeks.length / (W > 500 ? 6 : 4)) === 0 && <text x={L + i * bw + bw / 2} y={H - 4} textAnchor="middle">{day(w, { day: "numeric", month: "short" })}</text>}
             </g>
           );
         })}
@@ -73,10 +82,10 @@ export function WeekBars<R extends { week: string; fam: string }>({ rows, weeks,
 }
 
 /** Profilo (altimetria o battito) lungo la distanza. */
-export function Profile({ xs, ys, color = "var(--s2)", unit, height = 140 }: { xs: (number | null)[]; ys: (number | null)[]; color?: string; unit: string; height?: number }) {
+export function Profile({ xs, ys, color = "var(--s2)", unit, height = 200, width = 440 }: { xs: (number | null)[]; ys: (number | null)[]; color?: string; unit: string; height?: number; width?: number }) {
   const pts = xs.map((x, i) => [x, ys[i]] as const).filter((p): p is readonly [number, number] => p[0] !== null && p[1] !== null);
   if (pts.length < 5) return null;
-  const W = 640, H = height, L = 40, R = 8, T = 8, B = 20;
+  const W = width, H = height, L = 40, R = 8, T = 8, B = 20;
   const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
   let lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
   const pad = (hi - lo) * 0.1 || 1; lo -= pad; hi += pad;

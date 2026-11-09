@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Mark } from "@/components/Mark";
+import { Mark, Wordmark } from "@/components/Mark";
 
 const ITEMS = [
   { href: "/", label: "Oggi", d: "M4 11l8-7 8 7v9h-5v-6H9v6H4z" },
@@ -26,7 +26,7 @@ export function Nav() {
   return (
     <>
       <nav className="rail" aria-label="Sezioni">
-        <Link href="/" className="brand"><Mark /> Altura</Link>
+        <Link href="/" className="brand" aria-label="Altura, oggi"><Mark size={30} /><Wordmark height={22} /></Link>
         {ITEMS.map((i) => <Link key={i.href} href={i.href} className="nav" aria-current={cur(i.href)}><Icon d={i.d} />{i.label}</Link>)}
         <div className="foot">Know your edge</div>
       </nav>

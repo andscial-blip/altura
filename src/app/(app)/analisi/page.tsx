@@ -1,6 +1,6 @@
 import { dailyLoad, runEfficiency, weekly } from "@/lib/queries";
 import { acwr, acwrZone, efficiency, trend } from "@/lib/analytics";
-import { dec, hm, int, km, todayLocal } from "@/lib/fmt";
+import { dec, int, km, todayLocal } from "@/lib/fmt";
 import { LineChart, WeekBars } from "@/components/charts";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +36,8 @@ export default async function Page() {
         <p className="note">Somma delle distanze delle attività della settimana (lunedì–domenica, ora locale). Fonte: campi fusi delle attività (Garmin prioritario).</p>
       </section>
       <section className="grid g2">
-        <div className="panel"><h2>Tempo per settimana</h2><WeekBars rows={wk} weeks={weeks} value={(r) => r.time_s / 3600} fmt={(v) => hm(v * 3600)} label="Tempo settimanale" height={150} /></div>
-        <div className="panel"><h2>Dislivello per settimana</h2><WeekBars rows={wk} weeks={weeks} value={(r) => r.gain_m} fmt={(v) => `${int(v)} m`} label="Dislivello settimanale" height={150} /></div>
+        <div className="panel"><h2>Tempo per settimana</h2><WeekBars rows={wk} weeks={weeks} value={(r) => r.time_s / 3600} fmt={(v) => `${dec(v, 0)} h`} label="Tempo settimanale" height={220} width={420} /></div>
+        <div className="panel"><h2>Dislivello per settimana</h2><WeekBars rows={wk} weeks={weeks} value={(r) => r.gain_m} fmt={(v) => `${int(v)} m`} label="Dislivello settimanale" height={220} width={420} /></div>
       </section>
 
       <section className="panel">
