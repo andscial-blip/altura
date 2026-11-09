@@ -144,8 +144,9 @@ export async function syncGarmin(opts: { budgetMs?: number; backfillDays?: numbe
     st.fit_pending = [...pending.values()];
     await setState("garmin", st);
 
-    // 1b) storico: un blocco di 60 giorni all'indietro per volta, fino alla data scelta
-    if (st.history_from && st.backfill_before && st.backfill_before > st.history_from && Date.now() < deadline - 20_000) {
+    let histMoved = false;
+    // 1b) storico: blocchi di 60 giorni all'indietro, finché c'è tempo (lascia 25 s a metriche giornaliere e file FIT)
+    while (st.history_from && st.backfill_before && st.backfill_before > st.history_from && Date.now() < deadline - 25_000) {
       const end = new Date(st.backfill_before + "T00:00:00Z");
       const startD = new Date(Math.max(Date.parse(st.history_from + "T00:00:00Z"), end.getTime() - 60 * 86400_000));
       for (let start = 0; start < PAGE * 10; start += PAGE) {
@@ -163,9 +164,10 @@ export async function syncGarmin(opts: { budgetMs?: number; backfillDays?: numbe
       }
       st.backfill_before = isoDay(startD);
       st.fit_pending = [...pending.values()];
-      info.push(`storico importato fino al ${st.backfill_before}`);
+      histMoved = true;
       await setState("garmin", st);
     }
+    if (histMoved) info.push(st.backfill_before && st.history_from && st.backfill_before > st.history_from ? `storico importato fino al ${st.backfill_before}` : "storico completo");
 
     // 2) metriche giornaliere
     const dEnd = now;
