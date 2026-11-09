@@ -2,6 +2,7 @@ import "server-only";
 import { q } from "@/lib/db";
 import { garminConfigured, syncGarmin } from "@/lib/garmin";
 import { runnaConfigured, syncRunna } from "@/lib/runna";
+import { stravaConfigured, stravaConnection, syncStrava } from "@/lib/strava";
 
 const MIN_GAP_MIN = 10;
 
@@ -23,6 +24,11 @@ export async function syncAll(opts: { force?: boolean; budgetMs?: number } = {})
       if (!runnaConfigured()) out.runna = { status: "non configurato" };
       else if (!due("runna")) out.runna = { status: "recente" };
       else out.runna = await syncRunna();
+    })(),
+    (async () => {
+      if (!stravaConfigured() || !(await stravaConnection()).connected) out.strava = { status: "non collegato" };
+      else if (!due("strava")) out.strava = { status: "recente" };
+      else out.strava = await syncStrava({ budgetMs: opts.budgetMs ?? 45_000 });
     })(),
   ]);
   // le corse interrotte a metà (funzione chiusa dal limite di tempo) non restano "in corso" per sempre

@@ -138,6 +138,53 @@ run("integrazione con il database", () => {
     expect(JSON.stringify(runs)).not.toContain("secret=abc");
   });
 
+  it("sincronizzazione Strava con API simulate: storico, collegamento a Garmin, tracciati solo dove Garmin manca, token cifrati", { timeout: 60_000 }, async () => {
+    process.env.STRAVA_CLIENT_ID = "123";
+    process.env.STRAVA_CLIENT_SECRET = "segreto-strava-xyz";
+    const { upsertActivity } = await import("@/lib/ingest");
+    const t1 = new Date(Date.now() - 5 * 86400_000);
+    const g = await upsertActivity({ source: "garmin", external_id: "g-str", acquisition: "api", raw: {}, norm: { sport: "run", start_utc: t1.toISOString(), distance_m: 7000 } });
+    const old = "2024-08-18T05:46:15Z";
+    const summaries = [
+      { id: 501, name: "Corsa del pomeriggio", sport_type: "Run", start_date: new Date(t1.getTime() + 60_000).toISOString(), distance: 7040, moving_time: 2400, elapsed_time: 2500, has_heartrate: true, average_heartrate: 150, map: { summary_polyline: "abc" } },
+      { id: 502, name: "Huawei Health activity", sport_type: "Hike", start_date: old, start_date_local: "2024-08-18T08:46:15Z", timezone: "(GMT+03:00) Indian/Antananarivo", distance: 6832.5, moving_time: 6753, elapsed_time: 10652, total_elevation_gain: 144.3, map: { summary_polyline: "xyz" } },
+    ];
+    let tokenCalls = 0;
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+      const u = new URL(input);
+      seen.push(u.pathname + u.search);
+      if (u.pathname === "/oauth/token") {
+        tokenCalls++;
+        const b = JSON.parse(String(init?.body));
+        expect(b.client_secret).toBe("segreto-strava-xyz");
+        return Response.json({ access_token: "acc-" + tokenCalls, refresh_token: "ref-" + tokenCalls, expires_at: Math.floor(Date.now() / 1000) + 21600, athlete: { id: 42 } });
+      }
+      expect((init?.headers as Record<string, string>).Authorization).toMatch(/^Bearer acc-/);
+      if (u.pathname === "/api/v3/athlete/activities") return Response.json(u.searchParams.get("before") ? summaries.filter((s) => Date.parse(s.start_date) / 1000 < Number(u.searchParams.get("before"))) : []);
+      if (u.pathname === "/api/v3/activities/502/streams") return Response.json({ time: { data: [0, 10, 20] }, latlng: { data: [[-13.4, 48.3], [-13.41, 48.31], [-13.42, 48.32]] }, altitude: { data: [10, 12, 15] } });
+      return new Response("not found", { status: 404 });
+    });
+    const { exchangeCode, syncStrava, stravaConnection } = await import("@/lib/strava");
+    await exchangeCode("codice", "read,activity:read_all");
+    expect(await stravaConnection()).toMatchObject({ connected: true, athlete_id: 42, all: true });
+    const tok = await db.one<{ value: unknown }>("select value from sport.settings where key = 'strava_token'");
+    expect(JSON.stringify(tok)).not.toMatch(/acc-1|ref-1/);
+    const r = await syncStrava({ budgetMs: 30_000 });
+    expect(r.status).toBe("ok");
+    expect(r.counts).toMatchObject({ activities: 2, created: 1, linked: 1, streams: 1 });
+    const merged = await db.one<{ distance_m: string; name: string }>("select distance_m::text, name from sport.activities where id = $1", [g.id]);
+    expect(merged).toEqual({ distance_m: "7000", name: "Corsa del pomeriggio" }); // distanza da Garmin, nome da Strava
+    expect(seen.some((p) => p.startsWith("/api/v3/activities/501/streams"))).toBe(false); // Garmin porta il suo FIT
+    const hike = await db.one<{ id: string; sport: string; start_local: string }>("select id, sport, to_char(start_local, 'YYYY-MM-DD HH24:MI') as start_local from sport.activities where start_utc = $1", [old]);
+    expect(hike).toMatchObject({ sport: "hike", start_local: "2024-08-18 08:46" });
+    const st = await db.one<{ source: string; n_points: number }>("select source, n_points from sport.activity_streams where activity_id = $1", [hike!.id]);
+    expect(st).toEqual({ source: "strava", n_points: 3 });
+    const r2 = await syncStrava({ budgetMs: 30_000 });
+    expect(r2.counts).toMatchObject({ created: 0, streams: 0 });
+    expect(seen.filter((p) => p.includes("after="))).toHaveLength(1); // seconda volta solo le novità
+  });
+
   it("errore Runna: il messaggio non contiene l'indirizzo segreto", async () => {
     vi.stubGlobal("fetch", async () => { throw new Error("fetch failed for https://example.invalid/feed.ics?secret=abc"); });
     const { syncRunna } = await import("@/lib/runna");

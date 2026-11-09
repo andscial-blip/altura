@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { q } from "@/lib/db";
 import { lastSyncs } from "@/lib/queries";
 import { garminHistoryState, setGarminHistory } from "@/lib/garmin";
+import { disconnectStrava, stravaConnection } from "@/lib/strava";
 import { ago, when, SOURCE_LABEL } from "@/lib/fmt";
 import { Tokens } from "./Tokens";
 import { Devices } from "./Devices";
@@ -34,6 +35,19 @@ async function forgetGarminToken() {
   await q("delete from sport.settings where key = 'garmin_token'");
   revalidatePath("/impostazioni");
 }
+async function stravaOff() {
+  "use server";
+  await disconnectStrava();
+  revalidatePath("/impostazioni");
+}
+const STRAVA_MSG: Record<string, string> = {
+  ok: "Strava collegato. Le attività arrivano con la prossima sincronizzazione (lo storico in più passaggi).",
+  negato: "Autorizzazione annullata su Strava.",
+  permessi: "Serve il permesso di leggere le attività: ricollega e lascia spuntata la casella delle attività.",
+  stato: "Richiesta scaduta o non valida: riprova.",
+  config: "Mancano STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel.",
+  errore: "Strava non ha accettato il codice: riprova tra poco.",
+};
 async function deleteSource(fd: FormData) {
   "use server";
   const s = String(fd.get("source"));
@@ -46,13 +60,15 @@ async function deleteSource(fd: FormData) {
   revalidatePath("/", "layout");
 }
 
-export default async function Page() {
-  const [syncs, zones, passkeys, hist, counts] = await Promise.all([
+export default async function Page({ searchParams }: { searchParams: Promise<{ strava?: string }> }) {
+  const sp = await searchParams;
+  const [syncs, zones, passkeys, hist, counts, sconn] = await Promise.all([
     lastSyncs(),
     q<{ id: string; label: string; lat: string; lon: string; radius_m: number }>("select id, label, lat::text, lon::text, radius_m from sport.private_zones order by label"),
     q<{ id: string; device_label: string | null; created_at: string; last_used_at: string | null }>("select id, device_label, created_at, last_used_at from sport.passkeys order by created_at"),
     garminHistoryState(),
     q<{ source: string; n: number }>("select source, count(*)::int as n from sport.activity_sources group by source"),
+    stravaConnection(),
   ]);
   const env = { garmin: !!process.env.GARMIN_API_KEY, runna: !!process.env.RUNNA_ICS_URL, strava: !!(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET) };
   const n = (s: string) => counts.find((c) => c.source === s)?.n ?? 0;
@@ -61,7 +77,7 @@ export default async function Page() {
     garmin: env.garmin ? "Chiave personale Garmin presente sul server." : "Manca la chiave: va aggiunta su Vercel come GARMIN_API_KEY.",
     runna: env.runna ? "Indirizzo del calendario iCal Runna presente sul server." : "Manca l'indirizzo iCal di Runna: va aggiunto su Vercel come RUNNA_ICS_URL.",
     apple_health: "Automazione Comandi Rapidi sull'iPhone con un token creato qui sotto.",
-    strava: env.strava ? "App API Strava configurata." : "Non collegata. Garmin registra già le stesse attività; Strava resta facoltativo.",
+    strava: !env.strava ? "Manca l'app API Strava: STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel." : sconn.connected ? `Collegato con OAuth${sconn.all ? " (anche attività private)" : ""}; token salvati cifrati.` : "App API pronta: manca il collegamento (pulsante qui sotto).",
   };
   return (
     <div className="stack" style={{ gap: 20 }}>
@@ -84,6 +100,17 @@ export default async function Page() {
           })}</tbody>
         </table>
         <p className="note" style={{ marginTop: 10 }}>Le chiavi stanno solo nelle variabili d&apos;ambiente del server (Vercel), mai nel browser, nel codice o nei registri. Il token Garmin derivato è salvato cifrato.</p>
+      </section>
+
+      <section className="panel stack">
+        <h2>Strava</h2>
+        {sp.strava && STRAVA_MSG[sp.strava] ? <p className={`state ${sp.strava === "ok" ? "ok" : "warn"}`}>{STRAVA_MSG[sp.strava]}</p> : null}
+        <p className="note">Serve soprattutto per lo storico registrato prima di Garmin (altri orologi o app). Le uscite registrate da entrambi restano una sola attività: per i campi vale Garmin. I dati Strava si vedono solo qui e non servono ad addestrare modelli.</p>
+        {sconn.connected
+          ? <form action={stravaOff} className="row"><span>Collegato{sconn.athlete_id ? ` (atleta ${sconn.athlete_id})` : ""}.</span><button className="btn">Scollega Strava</button></form>
+          : env.strava
+            ? <div className="row"><a className="btn primary" href="/api/strava/connect">Collega Strava</a></div>
+            : <p className="note">Prima crea l&apos;app API su strava.com/settings/api e aggiungi STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel.</p>}
       </section>
 
       <section className="grid g2">
