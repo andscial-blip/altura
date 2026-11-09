@@ -222,7 +222,7 @@ end $$;
 -- ---------- Dati di base ----------
 insert into sport.sources(id, name, kind, official_route) values
  ('garmin','Garmin Connect','device','Accesso personale lato server dell''account Garmin (Forerunner 965): attività, file FIT, metriche giornaliere'),
- ('strava','Strava','platform','Connettore ufficiale Strava per Claude (OAuth gestito da Strava); niente uso dei dati Strava per l''AI'),
+ ('strava','Strava','platform','Strava API v3, OAuth del proprietario (token cifrati). Dati visibili solo al proprietario, mai usati per addestrare modelli.'),
  ('runna','Runna','plan','Feed iCal ufficiale del calendario Runna (sola lettura); Runna non ha API pubbliche'),
  ('apple_health','Apple Salute','health','Automazione di Comandi Rapidi sull''iPhone che invia i campioni Salute autorizzati'),
  ('manual','Inserimento manuale','manual','Dati inseriti o corretti a mano nell''app')
