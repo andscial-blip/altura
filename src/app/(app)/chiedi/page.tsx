@@ -1,3 +1,4 @@
+import { Head } from "@/components/Head";
 import { CopyPrompt } from "./CopyPrompt";
 
 export const metadata = { title: "Chiedi a Claude · Altura" };
@@ -12,7 +13,7 @@ const PROMPTS = [
 export default function Page() {
   return (
     <div className="stack">
-      <div className="head"><div><h1>Chiedi a Claude</h1><p>Le domande sui tuoi dati si fanno a Claude, che legge il database di Altura con il connettore Supabase già collegato al tuo account.</p></div></div>
+      <Head title="Chiedi a Claude" sub={<>Le domande sui tuoi dati si fanno a Claude, che legge il database di Altura con il connettore Supabase già collegato al tuo account.</>} tools={false} />
       <section className="panel stack">
         <h2>Come funziona</h2>
         <p>Apri una conversazione su claude.ai con il connettore Supabase attivo e incolla una delle domande qui sotto. Claude interroga solo lo schema <b>sport</b> del progetto e risponde citando dati, periodo, fonte, metodo e limiti.</p>

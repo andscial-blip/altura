@@ -17,3 +17,26 @@ export async function publicTrack(lat: (number | null)[] = [], lon: (number | nu
   if (cur.length > 1) segs.push(cur);
   return segs;
 }
+
+/** Miniature dei percorsi: ~80 punti campionati nel database, zone private tolte, path SVG in un riquadro 100×100. */
+export async function thumbs(ids: string[]): Promise<Record<string, string>> {
+  if (!ids.length) return {};
+  const { q } = await import("@/lib/db");
+  const rows = await q<{ id: string; lat: (number | null)[]; lon: (number | null)[] }>(
+    `select t.activity_id as id,
+            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 80)) i) as lat,
+            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 80)) i) as lon
+       from sport.activity_streams t where t.activity_id = any($1::uuid[]) and t.start_lat is not null`, [ids]);
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    const segs = await publicTrack(r.lat, r.lon, 200);
+    const pts = segs.flat();
+    if (pts.length < 2) continue;
+    const la = pts.map((p) => p[0]), lo = pts.map((p) => p[1]);
+    const k = Math.cos(((Math.min(...la) + Math.max(...la)) / 2) * Math.PI / 180);
+    const x0 = Math.min(...lo) * k, x1 = Math.max(...lo) * k, y0 = Math.min(...la), y1 = Math.max(...la);
+    const s = 84 / Math.max(x1 - x0, y1 - y0, 1e-6), ox = (100 - (x1 - x0) * s) / 2, oy = (100 - (y1 - y0) * s) / 2;
+    out[r.id] = segs.map((sg) => sg.map((p, i) => `${i ? "L" : "M"}${(ox + (p[1] * k - x0) * s).toFixed(1)} ${(oy + (y1 - p[0]) * s).toFixed(1)}`).join("")).join("");
+  }
+  return out;
+}

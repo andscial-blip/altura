@@ -1,4 +1,5 @@
 "use client";
+import { TZ, when } from "@/lib/fmt";
 import { useEffect, useState } from "react";
 
 type T = { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null };
@@ -25,7 +26,7 @@ export function Tokens() {
       <div className="row"><button className="btn primary" onClick={create}>Crea token</button></div>
       {list.length > 0 && (
         <table className="t"><thead><tr><th>Token</th><th>Creato</th><th>Ultimo uso</th><th></th></tr></thead>
-          <tbody>{list.map((t) => <tr key={t.id}><td>{t.label}</td><td>{new Date(t.created_at).toLocaleDateString("it-IT")}</td><td>{t.last_used_at ? new Date(t.last_used_at).toLocaleString("it-IT") : "mai"}</td><td className="r">{t.revoked_at ? <span className="state">revocato</span> : <button className="btn danger" onClick={() => revoke(t.id)}>Revoca</button>}</td></tr>)}</tbody>
+          <tbody>{list.map((t) => <tr key={t.id}><td>{t.label}</td><td>{new Date(t.created_at).toLocaleDateString("it-IT", { timeZone: TZ })}</td><td>{t.last_used_at ? when(t.last_used_at) : "mai"}</td><td className="r">{t.revoked_at ? <span className="state">revocato</span> : <button className="btn danger" onClick={() => revoke(t.id)}>Revoca</button>}</td></tr>)}</tbody>
         </table>
       )}
     </section>

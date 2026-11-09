@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Icon } from "@/components/Icon";
 
 /** All'apertura dell'app chiede una sincronizzazione (il server salta le fonti aggiornate da meno di 10 minuti). */
-export function SyncOnOpen({ label = true }: { label?: boolean }) {
+export function SyncOnOpen({ label = true, variant = "button" }: { label?: boolean; variant?: "button" | "icon" }) {
   const router = useRouter();
   const [state, setState] = useState<"idle" | "run" | "done" | "err">("idle");
   const run = async (force = false) => {
@@ -27,6 +28,12 @@ export function SyncOnOpen({ label = true }: { label?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   if (!label) return null;
+  const txt = state === "run" ? "Sincronizzo…" : state === "err" ? "Sincronizzazione non riuscita, riprova" : state === "done" ? "Dati aggiornati" : "Sincronizza ora";
+  if (variant === "icon") return (
+    <button type="button" className={`iconbtn sync-btn ${state}`} onClick={() => run(true)} disabled={state === "run"} aria-label={txt} title={txt}>
+      <Icon name="sync" size={20} /><span className="sr" aria-live="polite">{state === "idle" ? "" : txt}</span>
+    </button>
+  );
   return (
     <button className="btn" onClick={() => run(true)} disabled={state === "run"} aria-live="polite">
       {state === "run" ? "Sincronizzo…" : state === "err" ? "Riprova la sincronizzazione" : "Sincronizza ora"}

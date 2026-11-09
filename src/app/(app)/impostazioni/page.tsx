@@ -1,3 +1,4 @@
+import { Head } from "@/components/Head";
 import { revalidatePath } from "next/cache";
 import { q } from "@/lib/db";
 import { lastSyncs } from "@/lib/queries";
@@ -81,9 +82,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   };
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="head"><div><h1>Impostazioni</h1><p>Collegamenti, privacy e accesso.</p></div><SyncOnOpen /></div>
+      <Head title="Impostazioni" sub="Collegamenti, privacy e accesso." acts={<SyncOnOpen />} tools={false} />
 
-      <section className="panel scroll-x">
+      <section className="panel scroll-x" tabIndex={0} aria-label="Stato delle fonti">
         <h2>Collegamenti</h2>
         <table className="t">
           <thead><tr><th>Fonte</th><th>Come arrivano i dati</th><th className="r">Attività</th><th>Ultima sincronizzazione</th></tr></thead>

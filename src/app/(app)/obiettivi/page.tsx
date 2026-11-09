@@ -1,6 +1,10 @@
 import { revalidatePath } from "next/cache";
 import { q } from "@/lib/db";
 import { day, dec, dur, km, todayLocal } from "@/lib/fmt";
+import { runBests } from "@/lib/queries";
+import { isNum, riegel } from "@/lib/stats";
+import { Card, Head } from "@/components/Head";
+import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -32,43 +36,59 @@ export default async function Page() {
     `select coalesce(sum(distance_m) filter (where sport in ('run','trail_run','treadmill')),0)/1000/4 as km, coalesce(sum(elev_gain_m),0)/4 as gain
        from sport.activities where not hidden and start_utc > now() - interval '28 days'`);
   const today = todayLocal();
+  const bests = await runBests(90);
+  const b10 = bests.filter((b) => isNum(b.s10)).sort((a, b) => a.s10! - b.s10!)[0];
+  const b5 = bests.filter((b) => isNum(b.s5)).sort((a, b) => a.s5! - b.s5!)[0];
+  const base = b10 ? { t: b10.s10!, d: 10000, label: "10 km" } : b5 ? { t: b5.s5!, d: 5000, label: "5 km" } : null;
   return (
-    <div className="stack">
-      <div className="head"><div><h1>Obiettivi</h1><p>Gare, volumi settimanali, dislivello. Il progresso si calcola dai dati, non si dichiara.</p></div></div>
-      {goals.length === 0 && <div className="panel"><p className="empty">Nessun obiettivo. Aggiungine uno qui sotto, per esempio la prossima gara.</p></div>}
+    <div className="stack-l">
+      <Head title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
+      {goals.length === 0 && <div className="card"><p className="empty">Nessun obiettivo. Aggiungine uno qui sotto, per esempio la prossima gara.</p></div>}
       <div className="grid g2">
         {goals.map((g) => {
-          const weeksLeft = g.target_date ? Math.ceil((Date.parse(g.target_date) - Date.parse(today)) / (7 * 86400_000)) : null;
-          let progress = "";
-          if (g.kind === "volume" && g.target.km_week) progress = `Media ultime 4 settimane: ${dec(wk[0]?.km ?? 0)} km su ${dec(g.target.km_week)} km (${Math.round(((wk[0]?.km ?? 0) / g.target.km_week) * 100)}%).`;
-          if (g.kind === "dislivello" && g.target.gain_week_m) progress = `Media ultime 4 settimane: ${Math.round(wk[0]?.gain ?? 0)} m su ${Math.round(g.target.gain_week_m)} m.`;
+          const daysLeft = g.target_date ? Math.round((Date.parse(g.target_date) - Date.parse(today)) / 86400_000) : null;
+          const t = g.target;
+          let line = "", pred: number | null = null;
+          if (g.kind === "volume" && t.km_week) line = `Media ultime 4 settimane: ${dec(wk[0]?.km ?? 0)} km su ${dec(t.km_week)} km (${Math.round(((wk[0]?.km ?? 0) / t.km_week) * 100)}%).`;
+          if (g.kind === "dislivello" && t.gain_week_m) line = `Media ultime 4 settimane: ${Math.round(wk[0]?.gain ?? 0)} m su ${Math.round(t.gain_week_m)} m.`;
           if (g.kind === "gara" || g.kind === "test") {
-            const t = g.target;
             const range = t.time_min_s && t.time_max_s && t.time_min_s !== t.time_max_s;
-            const pace = t.pace_min_s && t.pace_max_s ? (t.pace_min_s === t.pace_max_s ? `${dur(t.pace_min_s)} /km` : `${dur(t.pace_min_s)}–${dur(t.pace_max_s)} /km`) : t.dist_m && t.time_s ? `${dur(t.time_s / (t.dist_m / 1000))} /km` : null;
-            progress = `${t.dist_m ? `${km(t.dist_m)} km` : ""}${range ? ` in ${dur(t.time_min_s!)}–${dur(t.time_max_s!)}` : t.time_s ? ` in ${dur(t.time_s)}` : ""}${pace ? `, ritmo ${pace}` : ""}.`;
+            const pc = t.pace_min_s && t.pace_max_s ? (t.pace_min_s === t.pace_max_s ? `${dur(t.pace_min_s)} /km` : `${dur(t.pace_min_s)}–${dur(t.pace_max_s)} /km`) : t.dist_m && t.time_s ? `${dur(t.time_s / (t.dist_m / 1000))} /km` : null;
+            line = `${t.dist_m ? `${km(t.dist_m)} km` : ""}${range ? ` in ${dur(t.time_min_s!)}–${dur(t.time_max_s!)}` : t.time_s ? ` in ${dur(t.time_s)}` : ""}${pc ? `, ritmo ${pc}` : ""}`;
+            if (base && t.dist_m) pred = riegel(base.t, base.d, t.dist_m);
           }
+          const race = (g.kind === "gara" || g.kind === "test") && g.active && daysLeft !== null && daysLeft >= 0;
           return (
-            <section key={g.id} className="panel" style={{ opacity: g.active ? 1 : 0.6 }}>
-              <div className="row between"><h2>{g.name}</h2>{g.id.startsWith("runna:") && <span className="state ok">{g.kind === "test" ? "Test" : "Gara"} · da Runna</span>}<form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn">{g.active ? "Archivia" : "Riattiva"}</button></form></div>
-              <p>{progress}</p>
-              {g.target_date && <p className="note">{day(g.target_date, { day: "numeric", month: "long", year: "numeric" })}{weeksLeft !== null && weeksLeft >= 0 ? `, tra ${weeksLeft} settimane` : ""}</p>}
+            <section key={g.id} className={`card${race ? " goal" : ""}`} style={{ opacity: g.active ? 1 : 0.6 }}>
+              <div className="row between" style={{ alignItems: "flex-start" }}>
+                <div style={{ minWidth: 0 }}>
+                  <p className="note" style={{ fontWeight: 600 }}><Icon name={g.kind === "test" ? "test" : g.kind === "gara" ? "race" : g.kind === "volume" ? "distance" : "gain"} size={14} /> {g.kind === "test" ? "Test" : g.kind === "gara" ? "Gara" : g.kind === "volume" ? "Volume" : "Dislivello"}{g.id.startsWith("runna:") ? " · da Runna" : ""}</p>
+                  <h2 style={{ marginTop: 4 }}>{g.name}</h2>
+                </div>
+                {race && <div className="count">{daysLeft}<small>giorni</small></div>}
+              </div>
+              <p style={{ marginTop: 8 }}>{line}</p>
+              {pred && <p className="note">Previsione oggi: <b className="mono">{dur(pred)}</b> (Riegel dal miglior {base!.label} degli ultimi 90 giorni){t.time_s ? `, ${pred <= t.time_s ? "dentro" : "oltre"} l'obiettivo di ${dur(Math.abs(pred - t.time_s))}` : ""}.</p>}
+              <div className="row between" style={{ marginTop: 10 }}>
+                <span className="note">{g.target_date ? day(g.target_date, { day: "numeric", month: "long", year: "numeric" }) : "senza data"}</span>
+                <form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn sm">{g.active ? "Archivia" : "Riattiva"}</button></form>
+              </div>
             </section>
           );
         })}
       </div>
-      <section className="panel">
-        <h2>Nuovo obiettivo</h2>
+      <Card title="Nuovo obiettivo" icon="target">
         <form action={addGoal} className="grid g3" style={{ alignItems: "end" }}>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Nome</span><input className="in" name="name" required placeholder="Mezza maratona di Antananarivo" /></label>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Tipo</span><select className="in" name="kind"><option value="gara">Gara</option><option value="volume">Km di corsa a settimana</option><option value="dislivello">Dislivello a settimana</option></select></label>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Data</span><input className="in" type="date" name="date" /></label>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Distanza gara (km)</span><input className="in" name="km" inputMode="decimal" placeholder="21,1" /></label>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Tempo obiettivo (h:mm:ss)</span><input className="in" name="time" placeholder="1:45:00" /></label>
-          <label className="stack" style={{ gap: 4 }}><span className="note">Valore settimanale (km o m)</span><input className="in" name="weekly" inputMode="decimal" /></label>
+          <label className="fld">Nome<input className="in" name="name" required placeholder="Mezza maratona di Antananarivo" /></label>
+          <label className="fld">Tipo<select className="in" name="kind"><option value="gara">Gara</option><option value="volume">Km di corsa a settimana</option><option value="dislivello">Dislivello a settimana</option></select></label>
+          <label className="fld">Data<input className="in" type="date" name="date" /></label>
+          <label className="fld">Distanza gara (km)<input className="in" name="km" inputMode="decimal" placeholder="21,1" /></label>
+          <label className="fld">Tempo obiettivo (h:mm:ss)<input className="in" name="time" placeholder="1:45:00" /></label>
+          <label className="fld">Valore settimanale (km o m)<input className="in" name="weekly" inputMode="decimal" /></label>
           <button className="btn primary" type="submit">Aggiungi obiettivo</button>
         </form>
-      </section>
+      </Card>
+      <p className="note">Previsione: formula di Riegel (tempo × (distanza obiettivo / distanza)^1,06) sul parziale più veloce misurato da Garmin. Presuppone una preparazione specifica sulla distanza.</p>
     </div>
   );
 }

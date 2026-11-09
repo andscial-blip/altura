@@ -1,13 +1,13 @@
 import type { NextConfig } from "next";
 
-// Security headers on every route. Strict CSP: no third-party scripts. Map tiles come from OpenFreeMap (free, no key).
+// Security headers on every route. Strict CSP: no third-party scripts. Map tiles: OpenFreeMap (no key), MapTiler satellite (public key restricted to the app origin), OpenTopoMap relief.
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
-  "img-src 'self' data: blob: https://tiles.openfreemap.org",
-  "connect-src 'self' https://tiles.openfreemap.org",
+  "img-src 'self' data: blob: https://tiles.openfreemap.org https://api.maptiler.com https://a.tile.opentopomap.org https://b.tile.opentopomap.org https://c.tile.opentopomap.org",
+  "connect-src 'self' https://tiles.openfreemap.org https://api.maptiler.com https://a.tile.opentopomap.org https://b.tile.opentopomap.org https://c.tile.opentopomap.org",
   "worker-src 'self' blob:",
   "child-src blob:",
   "frame-ancestors 'none'",

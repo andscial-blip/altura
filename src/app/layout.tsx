@@ -3,10 +3,14 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Splash } from "@/components/Splash";
 
-// Instrument Sans (SIL Open Font License), servito dall'app stessa: nessuna richiesta a Google.
+// IBM Plex Sans (variabile) e IBM Plex Mono (SIL Open Font License), serviti dall'app stessa: nessuna richiesta a Google.
 const sans = localFont({
-  src: [{ path: "../fonts/InstrumentSans-latin.woff2", weight: "400 700", style: "normal" }, { path: "../fonts/InstrumentSans-latin-ext.woff2", weight: "400 700", style: "normal" }],
+  src: [{ path: "../fonts/IBMPlexSans-latin.woff2", weight: "100 700", style: "normal" }, { path: "../fonts/IBMPlexSans-latin-ext.woff2", weight: "100 700", style: "normal" }],
   variable: "--font-sans", display: "swap",
+});
+const mono = localFont({
+  src: [{ path: "../fonts/IBMPlexMono-500-latin.woff2", weight: "500", style: "normal" }, { path: "../fonts/IBMPlexMono-500-latin-ext.woff2", weight: "500", style: "normal" }],
+  variable: "--font-mono", display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -17,11 +21,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
   icons: { icon: "/icons/icon.svg", apple: "/icons/apple-touch-icon.png" },
 };
-export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F5F7F9" }, { media: "(prefers-color-scheme: dark)", color: "#1B2433" }], width: "device-width", initialScale: 1, viewportFit: "cover" };
+export const viewport: Viewport = { themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F5F7F9" }, { media: "(prefers-color-scheme: dark)", color: "#18202D" }], width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it" className={sans.variable}>
+    <html lang="it" className={`${sans.variable} ${mono.variable}`}>
       <body>
         <Splash />
         {children}

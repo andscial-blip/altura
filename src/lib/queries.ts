@@ -53,8 +53,9 @@ export async function activity(id: string) {
             array(select s.source from sport.activity_sources s where s.activity_id = a.id) as sources, false as has_track
        from sport.activities a where a.id = $1`, [id]);
   if (!a) return null;
-  const sources = await q<{ source: string; external_id: string; acquisition: string; fetched_at: string; norm: Record<string, unknown>; extras: Record<string, unknown> | null; fit_session: Record<string, unknown> | null; runna: Record<string, unknown> | null }>(
+  const sources = await q<{ source: string; external_id: string; acquisition: string; fetched_at: string; norm: Record<string, unknown>; extras: Record<string, unknown> | null; fit_session: Record<string, unknown> | null; runna: Record<string, unknown> | null; summary: Record<string, unknown> | null }>(
     `select source, external_id, acquisition, fetched_at, norm, raw->'extras' as extras, raw->'fit_session' as fit_session,
+            case when source = 'garmin' then (raw->'summary') - 'splitSummaries' - 'ownerProfileImageUrlLarge' - 'ownerProfileImageUrlMedium' - 'ownerProfileImageUrlSmall' - 'ownerFullName' end as summary,
             case when source = 'runna' then jsonb_build_object('steps', raw->'steps', 'segments', raw->'segments', 'type', raw->'type', 'text', raw->'text') end as runna
        from sport.activity_sources where activity_id = $1 order by source`, [id]);
   const streams = await one<{ source: string; n_points: number; streams: Record<string, (number | null)[]>; bbox: string[] | null }>(
@@ -115,4 +116,64 @@ export async function runEfficiency(days: number) {
        from sport.activities a
       where not a.hidden and a.sport in ('run','trail_run') and a.avg_hr > 0 and a.distance_m > 3000 and a.start_utc > now() - make_interval(days => $1)
       order by a.start_utc`, [days]);
+}
+
+const LOCAL = "coalesce(a.start_local, a.start_utc at time zone 'Indian/Antananarivo')";
+
+/** Più metriche giornaliere in una volta: un valore al giorno per metrica, dalla fonte prioritaria. */
+export async function dailyMulti(metrics: string[], days: number) {
+  const rows = await q<{ metric: string; day: string; value: string; source: string }>(
+    `select distinct on (d.metric, d.day) d.metric, to_char(d.day,'YYYY-MM-DD') as day, d.value::text, d.source
+       from sport.daily_metrics d join sport.metric_catalog c using (metric)
+      where d.metric = any($1) and d.day >= current_date - $2::int
+      order by d.metric, d.day, coalesce(array_position(c.source_priority, d.source), 99)`, [metrics, days]);
+  const out: Record<string, { day: string; value: number; source: string }[]> = Object.fromEntries(metrics.map((m) => [m, []]));
+  for (const r of rows) out[r.metric].push({ day: r.day, value: Number(r.value), source: r.source });
+  return out;
+}
+
+export type Goal = { id: string; name: string; kind: string; target_date: string | null; target: Record<string, number | null>; active: boolean };
+export async function goals(activeOnly = false) {
+  return q<Goal>(`select id, name, kind, to_char(target_date,'YYYY-MM-DD') as target_date, target, active from sport.goals ${activeOnly ? "where active" : ""} order by active desc, target_date nulls last`);
+}
+
+/** Migliori tempi su 5 e 10 km (parziale più veloce calcolato da Garmin dentro ogni corsa). */
+export async function runBests(days: number) {
+  return q<{ id: string; day: string; name: string | null; s5: number | null; s10: number | null }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name,
+            (s.raw->'summary'->>'fastestSplit_5000')::float8 as s5, (s.raw->'summary'->>'fastestSplit_10000')::float8 as s10
+       from sport.activities a join sport.activity_sources s on s.activity_id = a.id and s.source = 'garmin'
+      where not a.hidden and a.sport in ('run','trail_run','treadmill') and a.start_utc > now() - make_interval(days => $1)
+        and (s.raw->'summary' ? 'fastestSplit_5000')
+      order by a.start_utc`, [days]);
+}
+
+/** Corse simili a una data (distanza ±20%, stesso sport), per il confronto nel dettaglio. */
+export async function similar(id: string, sport: string, dist: number) {
+  return q<{ id: string; day: string; name: string | null; dist: number; time: number; hr: number | null; gain: number | null }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name, a.distance_m::float8 as dist, coalesce(a.moving_s, a.elapsed_s)::float8 as time, a.avg_hr::float8 as hr, a.elev_gain_m::float8 as gain
+       from sport.activities a
+      where not a.hidden and a.id <> $1 and a.sport = $2 and a.distance_m between $3 * 0.8 and $3 * 1.2 and coalesce(a.moving_s, a.elapsed_s) > 0
+      order by a.start_utc desc limit 8`, [id, sport, dist]);
+}
+
+/** Attività di un periodo con i campi per i riepiloghi (luogo e zone da Garmin, se presenti). */
+export async function periodActs(from: string) {
+  return q<{ id: string; sport: string; day: string; name: string | null; dist: number; time: number; gain: number; hr: number | null; load: number | null; place: string | null }>(
+    `select a.id, a.sport, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name, coalesce(a.distance_m,0)::float8 as dist,
+            coalesce(a.moving_s, a.elapsed_s, 0)::float8 as time, coalesce(a.elev_gain_m,0)::float8 as gain, a.avg_hr::float8 as hr, a.training_load::float8 as load,
+            (select s.raw->'summary'->>'locationName' from sport.activity_sources s where s.activity_id = a.id and s.source = 'garmin') as place
+       from sport.activities a where not a.hidden and ${LOCAL} >= $1::date order by a.start_utc`, [from]);
+}
+
+/** Sedute Runna completate (l'uscita registrata da Runna, abbinata all'attività). */
+export async function runnaDone(from: string) {
+  return q<{ id: string; day: string; name: string | null; dist: number; time: number; type: string | null }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name, coalesce(a.distance_m,0)::float8 as dist, coalesce(a.moving_s, a.elapsed_s, 0)::float8 as time, s.raw->>'type' as type
+       from sport.activities a join sport.activity_sources s on s.activity_id = a.id and s.source = 'runna'
+      where not a.hidden and ${LOCAL} >= $1::date order by a.start_utc`, [from]);
+}
+
+export async function sportsPresent() {
+  return (await q<{ sport: string }>("select distinct sport from sport.activities where not hidden")).map((r) => r.sport);
 }

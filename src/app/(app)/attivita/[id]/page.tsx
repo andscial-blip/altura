@@ -1,19 +1,25 @@
+import { Fragment } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { activity } from "@/lib/queries";
+import { activity, similar } from "@/lib/queries";
 import { publicTrack } from "@/lib/track";
 import { dec, dur, int, km, pace, paceS, sportLabel, when, SOURCE_LABEL } from "@/lib/fmt";
 import { ACTIVITY_FIELDS, mergeNorms, type Norm, type SourceId } from "@/lib/model";
 import { compare, type Step } from "@/lib/runna-parse";
-import { Profile } from "@/components/charts";
-import { Src } from "@/components/Src";
+import { isNum, rolling, splitsFromStreams, type Split } from "@/lib/stats";
+import { Profiles, Zones } from "@/components/charts";
+import { Card, Head, Kpi } from "@/components/Head";
+import { SPORT_COLOR, StructBar } from "@/components/Act";
+import { Icon, SportIcon, sportMeta } from "@/components/Icon";
 import { TrackMap } from "@/components/TrackMap";
 
 export const dynamic = "force-dynamic";
 
 const FIELD_LABEL: Partial<Record<(typeof ACTIVITY_FIELDS)[number], string>> = {
-  distance_m: "Distanza", moving_s: "Tempo in movimento", elapsed_s: "Tempo totale", elev_gain_m: "Dislivello positivo", avg_hr: "FC media", max_hr: "FC massima",
-  avg_cadence: "Cadenza", avg_power: "Potenza media", training_load: "Carico di allenamento", name: "Nome", sport: "Disciplina",
+  name: "Nome", sport: "Disciplina", distance_m: "Distanza", moving_s: "Tempo in movimento", elapsed_s: "Tempo totale", elev_gain_m: "Dislivello positivo",
+  avg_hr: "FC media", max_hr: "FC massima", avg_cadence: "Cadenza", avg_power: "Potenza media", training_load: "Carico di allenamento",
 };
+const ON_FOOT = ["run", "trail_run", "treadmill", "hike", "walk"];
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,85 +27,172 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!d) notFound();
   const { a, sources, streams, laps, planned } = d;
   const s = streams?.streams ?? {};
+  const meta = sportMeta(a.sport);
+  const color = SPORT_COLOR[meta.fam] ?? "var(--run)";
   const track = await publicTrack(s.lat ?? [], s.lon ?? []);
   const isRun = ["run", "trail_run", "treadmill"].includes(a.sport);
+  const foot = ON_FOOT.includes(a.sport);
+  const t = Number(a.moving_s ?? a.elapsed_s ?? 0), dist = Number(a.distance_m ?? 0);
   const { field_source } = mergeNorms(sources.map((x) => ({ source: x.source as SourceId, norm: x.norm as Norm })));
   const garmin = sources.find((x) => x.source === "garmin");
   const ex = (garmin?.extras ?? {}) as Record<string, number | null>;
+  const sum = (garmin?.summary ?? {}) as Record<string, unknown>;
+  const place = typeof sum.locationName === "string" ? sum.locationName : null;
   const runna = sources.find((x) => x.source === "runna")?.runna as { steps?: Step[]; segments?: [number, number][] } | null | undefined;
-  const cmp = runna?.steps && runna.segments ? compare(runna.steps, runna.segments, planned?.km ? Number(planned.km) : null, planned ? [planned.duration_min_s, planned.duration_max_s] : null, a.distance_m ? Number(a.distance_m) / 1000 : null, a.moving_s ? Number(a.moving_s) : null) : null;
+  const cmp = runna?.steps && runna.segments ? compare(runna.steps, runna.segments, planned?.km ? Number(planned.km) : null, planned ? [planned.duration_min_s, planned.duration_max_s] : null, dist ? dist / 1000 : null, t || null) : null;
 
-  const stats: [string, string][] = [
-    ["Distanza", a.distance_m ? `${km(a.distance_m, 2)} km` : "–"],
-    ["Tempo", dur(a.moving_s ?? a.elapsed_s)],
-    [isRun ? "Passo medio" : "Velocità", a.distance_m ? (isRun || a.sport === "hike" || a.sport === "walk" ? `${pace(a.distance_m, a.moving_s ?? a.elapsed_s)} /km` : `${dec((Number(a.distance_m) / Number(a.moving_s ?? a.elapsed_s)) * 3.6)} km/h`) : "–"],
-    ["Dislivello", a.elev_gain_m ? `${int(a.elev_gain_m)} m` : "–"],
-    ["FC media / max", a.avg_hr ? `${int(a.avg_hr)} / ${int(a.max_hr)}` : "–"],
-    ["Carico", a.training_load ? int(a.training_load) : "–"],
-  ];
-  if (ex.gap_mps) stats.push(["Passo corretto per la pendenza", `${paceS(1000 / ex.gap_mps)} /km`]);
-  if (ex.vo2max) stats.push(["VO2max stimato da Garmin", dec(ex.vo2max)]);
-  if (ex.te_aerobic) stats.push(["Effetto allenante aerobico", dec(ex.te_aerobic)]);
+  // parziali al km: dalle serie se ci sono, altrimenti dai giri del dispositivo
+  let splits: Split[] = s.dist && s.t ? splitsFromStreams(s.dist, s.t, s.hr, s.alt) : [];
+  const splitSrc = splits.length ? "serie" : laps.length ? "giri" : null;
+  if (!splits.length && laps.length) splits = laps.map((l, i) => ({ km: i + 1, dist_m: Number(l.distance_m), time_s: Number(l.duration_s), pace_s: Number(l.duration_s) / (Number(l.distance_m) / 1000), hr: l.avg_hr ? Number(l.avg_hr) : null, gain_m: Number(l.elev_gain_m ?? 0) }));
+  const full = splits.filter((x) => x.dist_m >= 500 && isNum(x.pace_s));
+  const pMin = Math.min(...full.map((x) => x.pace_s)), pMax = Math.max(...full.map((x) => x.pace_s));
+  const whole = full.filter((x) => x.dist_m >= 990);
+  const best = whole.length > 1 ? whole.reduce((b, x) => (x.pace_s < b.pace_s ? x : b)) : null;
+
+  // zone di battito misurate da Garmin
+  const zones = [1, 2, 3, 4, 5].map((i) => Number(sum[`hrTimeInZone_${i}`] ?? 0));
+
+  // profili: passo (media mobile su 5 punti), battito, quota
+  const paceSer = s.v ? rolling(s.v.map((v) => (isNum(v) && v > 0.5 ? 1000 / v : null)), 5, 3) : [];
+  const sim = dist > 0 ? await similar(a.id, a.sport, dist) : [];
+  const myPace = dist && t ? t / (dist / 1000) : null;
+
+  const tech: [string, string][] = [];
+  if (a.avg_cadence) tech.push(["Cadenza media", `${int(a.avg_cadence)} ${isRun ? "passi/min" : "rpm"}`]);
+  if (a.avg_power) tech.push(["Potenza media", `${int(a.avg_power)} W`]);
+  if (ex.gap_mps && foot) tech.push(["Passo corretto per la pendenza", `${paceS(1000 / ex.gap_mps)} /km`]);
+  if (ex.stride_cm) tech.push(["Lunghezza del passo", `${dec(ex.stride_cm / 100, 2)} m`]);
+  if (ex.gct_ms) tech.push(["Tempo di contatto", `${int(ex.gct_ms)} ms`]);
+  if (ex.vo_cm) tech.push(["Oscillazione verticale", `${dec(ex.vo_cm)} cm`]);
+  if (ex.te_aerobic) tech.push(["Effetto allenante aerobico / anaerobico", `${dec(ex.te_aerobic)} / ${dec(ex.te_anaerobic ?? 0)}`]);
+  if (ex.vo2max) tech.push(["VO2max stimato da Garmin", dec(ex.vo2max)]);
+  if (isNum(sum.minTemperature) && isNum(sum.maxTemperature)) tech.push(["Temperatura (sensore orologio)", `${int(sum.minTemperature)}–${int(sum.maxTemperature)} °C`]);
+  if (isNum(sum.calories)) tech.push(["Calorie (stima Garmin)", `${int(sum.calories)} kcal`]);
+  if (a.elapsed_s && a.moving_s && Number(a.elapsed_s) - Number(a.moving_s) > 30) tech.push(["Tempo totale con soste", dur(a.elapsed_s)]);
 
   return (
-    <div className="stack" style={{ gap: 20 }}>
-      <div className="head">
-        <div><h1>{a.name ?? sportLabel(a.sport)}</h1><p>{sportLabel(a.sport)}, {when(a.start_utc)}{a.is_race ? ", gara" : ""}</p></div>
-        <div className="row">{sources.map((x) => <Src key={x.source} s={x.source} />)}</div>
+    <div className="stack-l">
+      <Head back={{ href: "/attivita", label: "Attività" }}
+        title={<span className="row" style={{ flexWrap: "nowrap", gap: 12 }}><SportIcon sport={a.sport} />{a.name ?? sportLabel(a.sport)}</span>}
+        sub={<>{sportLabel(a.sport)} · {when(a.start_utc)}{place ? ` · ${place}` : ""}{a.is_race ? " · gara" : ""}</>}
+        acts={<div className="row" style={{ gap: 10 }}>{sources.map((x) => <span key={x.source} className="src" data-s={x.source}><i />{SOURCE_LABEL[x.source]}</span>)}</div>} />
+
+      <div className="kpis">
+        <Kpi label="Distanza" icon="distance" value={dist ? km(dist, 2) : "–"} unit="km" />
+        <Kpi label="Tempo" icon="clock" value={dur(t)} />
+        <Kpi label={foot ? "Passo medio" : "Velocità media"} icon="trend" value={dist && t ? (foot ? pace(dist, t) : dec((dist / t) * 3.6)) : "–"} unit={foot ? "/km" : "km/h"} />
+        <Kpi label={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "Dislivello" : "Battito medio"} icon={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "gain" : "heart"}
+          value={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? int(a.elev_gain_m) : int(a.avg_hr)} unit={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "m" : "bpm"}
+          foot={a.avg_hr && Number(a.elev_gain_m ?? 0) > 30 ? `FC ${int(a.avg_hr)}/${int(a.max_hr)}` : a.training_load ? `carico ${int(a.training_load)}` : undefined} />
       </div>
 
-      <section className="grid g3">{stats.map(([l, v]) => <div key={l} className="panel metric"><div className="l">{l}</div><div className="v" style={{ fontSize: "1.375rem" }}>{v}</div></div>)}</section>
+      {track.length > 0 && <TrackMap lines={track} color={color} />}
 
-      {track.length > 0 && <section className="panel"><h2>Percorso</h2><TrackMap lines={track} /><p className="note" style={{ marginTop: 8 }}>Le zone private impostate sono escluse dalla mappa.</p></section>}
-
-      {(s.alt?.length || s.hr?.length) && s.dist ? (
-        <section className="grid g2">
-          {s.alt && <div className="panel"><h2>Altimetria</h2><Profile xs={s.dist} ys={s.alt} unit="m" color="var(--s2)" /></div>}
-          {s.hr && <div className="panel"><h2>Battito</h2><Profile xs={s.dist} ys={s.hr} unit="bpm" color="var(--s1)" /></div>}
-        </section>
+      {s.dist && (paceSer.length || s.hr || s.alt) ? (
+        <Card title="Andamento lungo il percorso" icon="activity" aside="tocca o passa sopra per i valori">
+          <Profiles x={s.dist} label="Profili dell'attività" rows={[
+            ...(foot && paceSer.length ? [{ name: "Passo (min/km)", ys: paceSer, color, fmt: (v: number) => paceS(v), invert: true }] : []),
+            ...(s.hr ? [{ name: "Battito (bpm)", ys: s.hr, color: "var(--z5)", fmt: (v: number) => int(v) }] : []),
+            ...(s.alt ? [{ name: "Quota (m)", ys: s.alt, color: "var(--faint)", fmt: (v: number) => int(v), area: true }] : []),
+          ]} />
+          <p className="note">Passo: media mobile su 5 punti, asse invertito (più in alto = più veloce). Valori estremi dell&apos;1% esclusi dalla scala. Fonte: {streams?.source ? SOURCE_LABEL[streams.source] : "–"}.</p>
+        </Card>
       ) : null}
 
+      <div className={`grid${full.length > 1 && zones.some((z) => z > 0) ? " g2" : ""}`}>
+        {full.length > 1 && (
+          <Card title="Parziali" icon="clock" aside={splitSrc === "serie" ? "al chilometro" : "giri del dispositivo"}>
+            <div className="tscroll">
+              <table className="t">
+                <thead><tr><th>{splitSrc === "serie" ? "Km" : "Giro"}</th><th className="r">Passo</th><th style={{ width: "40%" }}><span className="sr">confronto</span></th><th className="r">FC</th><th className="r">D+</th></tr></thead>
+                <tbody>{splits.map((x) => (
+                  <tr key={x.km}>
+                    <td className="mono">{x.dist_m < 990 ? `${dec(x.dist_m / 1000, 2)}` : x.km}</td>
+                    <td className="r mono" style={{ fontWeight: best === x ? 700 : undefined }}>{paceS(x.pace_s)}</td>
+                    <td><div className="pbar"><i style={{ width: `${pMax > pMin ? 30 + (70 * (pMax - x.pace_s)) / (pMax - pMin) : 100}%`, background: best === x ? "var(--sun)" : color }} /></div></td>
+                    <td className="r mono">{x.hr ? int(x.hr) : "–"}</td>
+                    <td className="r mono">{int(x.gain_m)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p className="note" style={{ marginTop: 8 }}>Barra più lunga = più veloce; in giallo il parziale migliore.{splitSrc === "serie" ? " Tempo al km interpolato tra i punti registrati." : ""}</p>
+          </Card>
+        )}
+        {zones.some((z) => z > 0) && (
+          <Card title="Zone di battito" icon="heart" aside="tempo in zona, Garmin">
+            <Zones secs={zones} />
+            <p className="note" style={{ marginTop: 8 }}>Zone calcolate dall&apos;orologio Garmin con le soglie impostate nel tuo profilo Garmin.</p>
+          </Card>
+        )}
+      </div>
+
       {planned && (
-        <section className="panel">
-          <h2>Seduta Runna: {planned.title}</h2>
+        <Card title={`Seduta Runna: ${planned.title}`} icon="calendar">
+          <StructBar steps={planned.structure?.steps} />
           {cmp ? (
-            <>
+            <div className="stack" style={{ marginTop: 12 }}>
               <p>Esito: <b>{String(cmp.verdict)}</b>{typeof cmp.km_diff_pct === "number" ? `, distanza ${cmp.km_diff_pct > 0 ? "+" : ""}${dec(cmp.km_diff_pct)}% rispetto al previsto` : ""}.</p>
               {cmp.work.length > 0 && (
-                <div className="scroll-x"><table className="t" style={{ marginTop: 10 }}>
+                <div className="tscroll"><table className="t">
                   <thead><tr><th>Ripetuta</th><th className="r">Metri</th><th className="r">Passo</th><th className="r">Obiettivo</th><th>Esito</th></tr></thead>
-                  <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1}</td><td className="r">{w.m}</td><td className="r">{paceS(w.pace)}</td><td className="r">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`state ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
+                  <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1}</td><td className="r mono">{w.m}</td><td className="r mono">{paceS(w.pace)}</td><td className="r mono">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`badge ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
                 </table></div>
               )}
-              <p className="note" style={{ marginTop: 8 }}>Metodo: i passi prescritti nel calendario Runna vengono confrontati in ordine con i segmenti registrati da Runna; tolleranza di 3 s/km oltre la forbice indicata (5 s/km se Runna non dà una forbice). {cmp.notes.join(" ")}</p>
-            </>
-          ) : <p className="note">Seduta abbinata; i segmenti Runna non sono disponibili per il confronto ripetuta per ripetuta.</p>}
-        </section>
+              <p className="note">Metodo: i passi prescritti da Runna confrontati in ordine con i segmenti registrati da Runna; tolleranza 3 s/km oltre la forbice (5 s/km senza forbice). {cmp.notes.join(" ")}</p>
+            </div>
+          ) : <p className="note" style={{ marginTop: 10 }}>Seduta abbinata; i segmenti Runna non sono disponibili per il confronto ripetuta per ripetuta.</p>}
+        </Card>
       )}
 
-      {laps.length > 0 && (
-        <section className="panel scroll-x">
-          <h2>Giri</h2>
+      {sim.length > 0 && myPace && (
+        <Card title="Uscite simili" icon="trend" aside={`${sportLabel(a.sport)}, ${km(dist * 0.8, 0)}–${km(dist * 1.2, 0)} km`}>
+          <div className="tscroll">
+            <table className="t">
+              <thead><tr><th>Data</th><th className="r">Km</th><th className="r">{foot ? "Passo" : "Tempo"}</th><th className="r">FC</th><th className="r">D+</th></tr></thead>
+              <tbody>
+                <tr style={{ background: "var(--surface-2)" }}><td><b>Questa</b></td><td className="r mono">{km(dist)}</td><td className="r mono">{foot ? paceS(myPace) : dur(t)}</td><td className="r mono">{int(a.avg_hr)}</td><td className="r mono">{int(a.elev_gain_m)}</td></tr>
+                {sim.map((x) => {
+                  const p = x.time / (x.dist / 1000), dd = p - myPace;
+                  return (
+                    <tr key={x.id}>
+                      <td><Link href={`/attivita/${x.id}`}>{x.name ?? x.day}</Link><div className="note">{x.day.split("-").reverse().join("/")}</div></td>
+                      <td className="r mono">{km(x.dist)}</td>
+                      <td className="r mono">{foot ? paceS(p) : dur(x.time)}{foot && <div className={Math.abs(dd) < 2 ? "ne" : dd > 0 ? "up" : "dn"} style={{ fontSize: "0.6875rem" }}>{Math.abs(dd) < 2 ? "uguale" : `${dd > 0 ? "+" : "−"}${int(Math.abs(dd))} s`}</div>}</td>
+                      <td className="r mono">{x.hr ? int(x.hr) : "–"}</td>
+                      <td className="r mono">{x.gain ? int(x.gain) : "–"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="note" style={{ marginTop: 8 }}>Stesso sport, distanza entro ±20%, le 8 più recenti. Sotto il passo: differenza rispetto a questa uscita (+ = quella era più lenta). Il passo dipende anche da dislivello e tipo di seduta: confronta guardando FC e D+.</p>
+        </Card>
+      )}
+
+      {tech.length > 0 && (
+        <Card title="Dati tecnici" icon="chart">
+          <dl className="kv">{tech.map(([l, v]) => <Fragment key={l}><dt>{l}</dt><dd>{v}</dd></Fragment>)}</dl>
+        </Card>
+      )}
+
+      <details className="card more">
+        <summary>Da dove arrivano i dati <Icon name="next" size={16} /></summary>
+        <p className="note" style={{ margin: "4px 0 10px" }}>Per ogni campo vale la fonte più affidabile che lo fornisce: correzione manuale, poi Garmin (il dispositivo che misura), poi Strava, poi Apple Salute. Il nome viene da Strava. I record originali restano conservati e non vengono mai modificati.</p>
+        <div className="tscroll">
           <table className="t">
-            <thead><tr><th>Giro</th><th className="r">Distanza</th><th className="r">Tempo</th><th className="r">Passo</th><th className="r">FC</th><th className="r">Cadenza</th><th className="r">D+</th></tr></thead>
-            <tbody>{laps.map((l) => <tr key={l.idx}><td>{l.idx + 1}</td><td className="r">{km(l.distance_m, 2)}</td><td className="r">{dur(l.duration_s)}</td><td className="r">{pace(l.distance_m, l.duration_s)}</td><td className="r">{int(l.avg_hr)}</td><td className="r">{int(l.avg_cadence)}</td><td className="r">{int(l.elev_gain_m)}</td></tr>)}</tbody>
+            <thead><tr><th>Campo</th><th>Usato</th>{sources.map((x) => <th key={x.source}>{SOURCE_LABEL[x.source]}</th>)}</tr></thead>
+            <tbody>
+              {(Object.keys(FIELD_LABEL) as (keyof typeof FIELD_LABEL)[]).filter((f) => sources.some((x) => x.norm[f] !== null && x.norm[f] !== undefined)).map((f) => (
+                <tr key={f}><td>{FIELD_LABEL[f]}</td><td>{field_source[f] ? SOURCE_LABEL[field_source[f]!] : "–"}</td>{sources.map((x) => { const v = x.norm[f]; return <td key={x.source}>{v === null || v === undefined ? "–" : typeof v === "number" ? v.toLocaleString("it-IT") : f === "sport" ? sportLabel(String(v)) : String(v)}</td>; })}</tr>
+              ))}
+              <tr><td>Acquisizione</td><td></td>{sources.map((x) => <td key={x.source}>{x.acquisition}, {when(x.fetched_at)}</td>)}</tr>
+            </tbody>
           </table>
-        </section>
-      )}
-
-      <section className="panel scroll-x">
-        <h2>Da dove arrivano i dati</h2>
-        <p className="note" style={{ marginBottom: 10 }}>Per ogni campo vale la fonte più affidabile che lo fornisce: correzione manuale, poi Garmin (il dispositivo che misura), poi Strava, poi Apple Salute. I record originali di ogni fonte restano conservati e non vengono mai modificati.</p>
-        <table className="t">
-          <thead><tr><th>Campo</th><th>Valore usato</th>{sources.map((x) => <th key={x.source}>{SOURCE_LABEL[x.source]}</th>)}</tr></thead>
-          <tbody>
-            {(Object.keys(FIELD_LABEL) as (keyof typeof FIELD_LABEL)[]).filter((f) => sources.some((x) => x.norm[f] !== null && x.norm[f] !== undefined)).map((f) => (
-              <tr key={f}><td>{FIELD_LABEL[f]}</td><td>{field_source[f] ? SOURCE_LABEL[field_source[f]!] : "–"}</td>{sources.map((x) => { const v = x.norm[f]; return <td key={x.source}>{v === null || v === undefined ? "–" : typeof v === "number" ? v.toLocaleString("it-IT") : f === "sport" ? sportLabel(String(v)) : String(v)}</td>; })}</tr>
-            ))}
-            <tr><td>Acquisizione</td><td></td>{sources.map((x) => <td key={x.source}>{x.acquisition}, {when(x.fetched_at)}</td>)}</tr>
-          </tbody>
-        </table>
-      </section>
+        </div>
+      </details>
     </div>
   );
 }
