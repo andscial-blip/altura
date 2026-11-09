@@ -61,7 +61,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ g
 
   return (
     <div className="stack-l">
-      <Head icon="heart" title="Salute" sub="Recupero e corpo. Un valore al giorno per metrica, dalla fonte più affidabile; i giorni senza dato restano vuoti." />
+      <Head icon="heart" title="Tutti i dati di salute" back={{ href: "/corpo", label: "Corpo" }} sub="Storico completo, un valore al giorno per metrica dalla fonte più affidabile; i giorni senza dato restano vuoti." />
       <div className="row between">
         <Seg className="inline" label="Periodo" items={[...[30, 90, 180, 365].map((d) => ({ href: `/salute?g=${d}`, label: d === 365 ? "1 anno" : `${d} gg`, on: !custom && d === g })), { href: "/salute?g=tutto", label: "Tutto", on: !custom && g === "tutto" }]} />
         {custom && <span className="note">Periodo scelto: {periodLabel} · <a href={`/salute?g=90`}>torna a 90 giorni</a></span>}

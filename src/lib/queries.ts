@@ -192,7 +192,7 @@ async function splitRows_() {
   return q<{ id: string; day: string; name: string | null; s1: number | null; s1609: number | null; s5: number | null; s10: number | null; s21: number | null; race: boolean }>(
     `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name,
             (coalesce(s.raw->'summary'->'eventType'->>'typeKey', '') = 'race'
-              or exists (select 1 from sport.activity_sources r where r.activity_id = a.id and r.source = 'runna' and r.raw->>'type' in ('gara','test'))) as race,
+              or exists (select 1 from sport.activity_sources r where r.activity_id = a.id and r.source = 'runna' and r.raw->>'type' = 'gara')) as race,
             (s.raw->'summary'->>'fastestSplit_1000')::float8 as s1, (s.raw->'summary'->>'fastestSplit_1609')::float8 as s1609,
             (s.raw->'summary'->>'fastestSplit_5000')::float8 as s5, (s.raw->'summary'->>'fastestSplit_10000')::float8 as s10,
             (s.raw->'summary'->>'fastestSplit_21098')::float8 as s21
@@ -258,6 +258,51 @@ async function routeRuns_(ids: string[]) {
        from sport.activities a where a.id = any($1::uuid[]) and coalesce(a.moving_s, a.elapsed_s) > 0 order by a.start_utc`, [ids]);
 }
 
+/** Domanda del mattino e contesto (tabella db/005; se non c'è ancora, nessun dato). */
+async function checkins_(from: string) {
+  return q<{ day: string; feel: number | null; context: string[] }>(
+    "select to_char(day,'YYYY-MM-DD') as day, feel, context from sport.checkins where day >= $1::date order by day", [from])
+    .catch((e: unknown) => { if (String((e as { code?: string })?.code) === "42P01") return []; throw e; });
+}
+
+/** La tabella della domanda del mattino esiste? (creata con db/005) */
+async function checkinsReady_() {
+  return (await q<{ ok: boolean }>("select to_regclass('sport.checkins') is not null as ok"))[0]?.ok ?? false;
+}
+
+/** Tempo nelle 5 zone di battito (Garmin) per ogni corsa da una data. */
+async function zoneRows_(from: string) {
+  const rows = await q<{ day: string; z1: number | null; z2: number | null; z3: number | null; z4: number | null; z5: number | null }>(
+    `select to_char(${LOCAL},'YYYY-MM-DD') as day,
+            (s.raw->'summary'->>'hrTimeInZone_1')::float8 as z1, (s.raw->'summary'->>'hrTimeInZone_2')::float8 as z2, (s.raw->'summary'->>'hrTimeInZone_3')::float8 as z3,
+            (s.raw->'summary'->>'hrTimeInZone_4')::float8 as z4, (s.raw->'summary'->>'hrTimeInZone_5')::float8 as z5
+       from sport.activities a join sport.activity_sources s on s.activity_id = a.id and s.source = 'garmin'
+      where not a.hidden and a.sport in ('run','trail_run','treadmill') and ${LOCAL} >= $1::date and (s.raw->'summary' ? 'hrTimeInZone_1')
+      order by a.start_utc`, [from]);
+  return rows.map((r) => ({ day: r.day, z: [r.z1, r.z2, r.z3, r.z4, r.z5].map((v) => Number(v) || 0) }));
+}
+
+/** Curva personale velocità-pendenza da escursioni e trail (tutto lo storico): si restituisce solo la curva, non i tracciati. */
+async function mountainCurve_() {
+  const rows = await q<{ dist: (number | null)[]; alt: (number | null)[]; t: (number | null)[] }>(
+    `select array(select (st.streams->'dist'->>i)::float8 from generate_series(0, st.n_points - 1) i) as dist,
+            array(select (st.streams->'alt'->>i)::float8 from generate_series(0, st.n_points - 1) i) as alt,
+            array(select (st.streams->'t'->>i)::float8 from generate_series(0, st.n_points - 1) i) as t
+       from sport.activities a join sport.activity_streams st on st.activity_id = a.id
+      where not a.hidden and a.sport in ('hike','walk','trail_run') and st.streams ? 'alt' and st.streams ? 'dist' and st.streams ? 't'`);
+  const { byDistance, speedCurve } = await import("@/lib/mountain");
+  return { n: rows.length, curve: speedCurve(rows.map((r) => byDistance(r.dist, r.alt, r.t))) };
+}
+
+/** Uscite in montagna (escursione, camminata, trail) con dislivello, per l'elenco e la VAM. */
+async function mountainActs_() {
+  return q<{ id: string; day: string; name: string | null; sport: string; dist: number; time: number; gain: number; hr: number | null; place: string | null }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name, a.sport, coalesce(a.distance_m,0)::float8 as dist, coalesce(a.moving_s, a.elapsed_s, 0)::float8 as time,
+            coalesce(a.elev_gain_m,0)::float8 as gain, a.avg_hr::float8 as hr,
+            (select x.raw->'summary'->>'locationName' from sport.activity_sources x where x.activity_id = a.id and x.source = 'garmin') as place
+       from sport.activities a where not a.hidden and a.sport in ('hike','walk','trail_run') order by a.start_utc desc`);
+}
+
 async function sportsPresent_() {
   return (await q<{ sport: string }>("select distinct sport from sport.activities where not hidden")).map((r) => r.sport);
 }
@@ -286,3 +331,8 @@ export const results = cached("results", results_);
 export const routeGroups = cached("routeGroups", routeGroups_, 3600);
 export const routeRuns = cached("routeRuns", routeRuns_);
 export const sameRouteIds = cached("sameRouteIds", sameRouteIds_);
+export const checkins = cached("checkins", checkins_, 60);
+export const checkinsReady = cached("checkinsReady", checkinsReady_, 300);
+export const zoneRows = cached("zoneRows", zoneRows_);
+export const mountainCurve = cached("mountainCurve", mountainCurve_, 3600);
+export const mountainActs = cached("mountainActs", mountainActs_);

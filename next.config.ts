@@ -23,6 +23,10 @@ const config: NextConfig = {
   // Le schermate già viste restano in memoria nel browser 5 minuti: tornarci è istantaneo.
   // Dopo una sincronizzazione con dati nuovi l'app chiede comunque un aggiornamento (router.refresh).
   experimental: { staleTimes: { dynamic: 300, static: 600 } },
+  // vecchie sezioni confluite nelle quattro schede
+  async redirects() {
+    return [{ source: "/progressi", destination: "/gara", permanent: false }];
+  },
   async headers() {
     return [
       {

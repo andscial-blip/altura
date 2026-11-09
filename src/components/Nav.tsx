@@ -5,28 +5,33 @@ import { useEffect } from "react";
 import { Mark, Wordmark } from "@/components/Mark";
 import { Icon } from "@/components/Icon";
 
-/** Barra laterale (desktop) con tutte le sezioni; su telefono 5 schede. Mappa si apre da Attività, Obiettivi da Oggi e Piano,
- *  Chiedi e Impostazioni dalle icone in alto a destra di ogni pagina. */
+/** Quattro schede, una domanda ciascuna: Oggi (come sto, cosa faccio), Allenamento (cosa ho fatto e cosa mi aspetta),
+ *  Gara (arrivo all'obiettivo?), Corpo (recupero bene?). Le altre pagine sono dettagli raggiungibili da lì; su desktop
+ *  stanno anche nella barra laterale. Chiedi e Impostazioni dalle icone in alto a destra. */
 const MAIN = [
   { href: "/", label: "Oggi", icon: "home" },
-  { href: "/attivita", label: "Attività", icon: "activity" },
-  { href: "/analisi", label: "Analisi", icon: "chart" },
-  { href: "/salute", label: "Salute", icon: "heart" },
-  { href: "/piano", label: "Piano", icon: "calendar" },
+  { href: "/allenamento", label: "Allenamento", icon: "activity" },
+  { href: "/gara", label: "Gara", icon: "race" },
+  { href: "/corpo", label: "Corpo", icon: "heart" },
 ];
 const MORE = [
-  { href: "/progressi", label: "Progressi", icon: "trend" },
+  { href: "/attivita", label: "Tutte le attività", icon: "run" },
+  { href: "/piano", label: "Calendario Runna", icon: "calendar" },
+  { href: "/montagna", label: "Montagna", icon: "mountain" },
   { href: "/mappa", label: "Mappa", icon: "map" },
-  { href: "/obiettivi", label: "Obiettivi", icon: "target" },
+  { href: "/analisi", label: "Analisi per disciplina", icon: "chart" },
 ];
 const TOOLS = [
   { href: "/chiedi", label: "Chiedi a Claude", icon: "chat" },
   { href: "/impostazioni", label: "Impostazioni", icon: "settings" },
 ];
+/** Sottopagine: la scheda principale resta accesa. */
+const UNDER: Record<string, string[]> = { "/allenamento": ["/attivita", "/piano", "/montagna", "/mappa", "/analisi"], "/gara": ["/obiettivi", "/progressi"], "/corpo": ["/salute"] };
 
 export function Nav() {
   const p = usePathname();
   const cur = (h: string) => ((h === "/" ? p === "/" : p.startsWith(h)) ? "page" : undefined);
+  const lit = (h: string) => (cur(h) || (UNDER[h] ?? []).some((x) => p.startsWith(x)) ? "page" : undefined);
   // le schede orizzontali (sport, periodi) mostrano sempre quella attiva, anche se è in fondo alla fila
   // cambio sezione: si riparte dall'alto (con il marchio visibile), non dal punto in cui Next porta il nuovo contenuto
   useEffect(() => { window.scrollTo({ top: 0 }); }, [p]);
@@ -56,9 +61,7 @@ export function Nav() {
       </nav>
       <nav className="tabbar" aria-label="Sezioni principali">
         {MAIN.map((i) => {
-          // Mappa vive sotto Attività, Progressi sotto Analisi, Obiettivi sotto Piano: la scheda resta accesa
-          const on = cur(i.href) || (i.href === "/attivita" && p.startsWith("/mappa")) || (i.href === "/analisi" && p.startsWith("/progressi")) || (i.href === "/piano" && p.startsWith("/obiettivi")) ? "page" : undefined;
-          return <Link key={i.href} href={i.href} prefetch={true} aria-current={on}><Icon name={i.icon} size={22} />{i.label}</Link>;
+          return <Link key={i.href} href={i.href} prefetch={true} aria-current={lit(i.href)}><Icon name={i.icon} size={22} />{i.label}</Link>;
         })}
       </nav>
     </>

@@ -23,6 +23,24 @@ const FIELD_LABEL: Partial<Record<(typeof ACTIVITY_FIELDS)[number], string>> = {
 };
 const ON_FOOT = ["run", "trail_run", "treadmill", "hike", "walk"];
 
+/** Blocchi ripetuti raggruppati: 24 righe "200 m veloce / 200 m lento" diventano "12 × Lavoro + Recupero". */
+function groupBlocks<T extends { label: string; m: number | null; pace: number | null; limit: number | null }>(list: T[]): { unit: T[]; times: number }[] {
+  const same = (a: T, b: T) => a.label === b.label && a.m === b.m && a.pace === b.pace && a.limit === b.limit;
+  const out: { unit: T[]; times: number }[] = [];
+  let i = 0;
+  while (i < list.length) {
+    let best = { u: 1, k: 1 };
+    for (const u of [1, 2]) {
+      let k = 1;
+      while (i + (k + 1) * u <= list.length && list.slice(i + k * u, i + (k + 1) * u).every((b, j) => same(b, list[i + j]))) k++;
+      if (k > 1 && k * u > best.k * best.u) best = { u, k };
+    }
+    out.push({ unit: list.slice(i, i + best.u), times: best.k });
+    i += best.u * best.k;
+  }
+  return out;
+}
+
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const d = await activity(id);
@@ -175,8 +193,14 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 <div className="tscroll">
                   <table className="t">
                     <caption className="sr">Blocchi previsti della seduta</caption>
-                    <thead><tr><th scope="col">Blocco</th><th scope="col" className="r">Distanza prevista</th><th scope="col" className="r">Passo obiettivo</th><th scope="col" className="r">Durata stimata</th></tr></thead>
-                    <tbody>{blocks.map((b, i) => <tr key={i}><td>{b.label}</td><td className="r mono">{b.m ? (b.m >= 1000 ? `${dec(b.m / 1000, b.m % 1000 ? 1 : 0)} km` : `${b.m} m`) : "–"}</td><td className="r mono">{b.pace ? `${paceS(b.pace)} /km` : b.limit ? `oltre ${paceS(b.limit)} /km` : "libero"}</td><td className="r mono">{b.s ? dur(b.s) : b.est ? `≈ ${dur(b.est)}` : "–"}</td></tr>)}</tbody>
+                    <thead><tr><th scope="col">Blocco</th><th scope="col" className="r">Distanza</th><th scope="col" className="r">Passo</th><th scope="col" className="r">Durata</th></tr></thead>
+                    <tbody>{groupBlocks(blocks).map((g, i) => {
+                      const mTxt = (m: number | null) => (m ? (m >= 1000 ? `${dec(m / 1000, m % 1000 ? 1 : 0)} km` : `${m} m`) : "–");
+                      const pTxt = (b: (typeof blocks)[number]) => (b.pace ? paceS(b.pace) : b.limit ? `>${paceS(b.limit)}` : "libero");
+                      const secs = g.unit.reduce((z, b) => z + (b.s ?? b.est ?? 0), 0) * g.times;
+                      const exact = g.unit.every((b) => b.s);
+                      return <tr key={i}><td>{g.times > 1 ? `${g.times} × ` : ""}{g.unit.map((b) => b.label).join(" + ")}</td><td className="r mono">{g.unit.map((b) => mTxt(b.m)).join(" + ")}</td><td className="r mono">{g.unit.map(pTxt).join(" / ")}</td><td className="r mono">{secs ? `${exact ? "" : "≈ "}${dur(secs)}` : "–"}</td></tr>;
+                    })}</tbody>
                   </table>
                 </div>
               </>
@@ -187,8 +211,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
                 {cmp.work.length > 0 && (
                   <div className="tscroll"><table className="t">
                     <caption className="sr">Ripetute: passo registrato e obiettivo</caption>
-                    <thead><tr><th scope="col">Ripetuta</th><th scope="col" className="r">Metri</th><th scope="col" className="r">Passo registrato</th><th scope="col" className="r">Obiettivo</th><th scope="col">Esito</th></tr></thead>
-                    <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1}</td><td className="r mono">{w.m}</td><td className="r mono">{paceS(w.pace)}</td><td className="r mono">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`badge ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
+                    <thead><tr><th scope="col">Ripetuta</th><th scope="col" className="r">Passo</th><th scope="col" className="r">Obiettivo</th><th scope="col">Esito</th></tr></thead>
+                    <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1} · {w.m} m</td><td className="r mono">{paceS(w.pace)}</td><td className="r mono">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`badge ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
                   </table></div>
                 )}
               </>

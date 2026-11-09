@@ -101,3 +101,32 @@ export function goalStatus(estimateS: number | null, targetS: number | null, dis
   const pctNeeded = gap > 0 ? (gap / estimateS) * 100 : 0;
   return { gap, perKm, pctNeeded, perWeekPct: weeks ? pctNeeded / weeks : null, onTrack: gap <= 0 };
 }
+
+/**
+ * Stima di gara unica (parere dell'allenatore): ancorata alla gara o al test fatto a fondo più recente degli ultimi 12 mesi,
+ * convertita con Riegel. La forbice parte da ±1% e si allarga di 0,5% per ogni mese oltre i primi due (massimo ±5%):
+ * più il riferimento è vecchio, meno sappiamo della forma di oggi. Affidabilità: alta entro 8 settimane, media entro 6 mesi.
+ * Gli allenamenti non spostano il tempo (non sono sforzi massimali): danno solo la freccia di tendenza.
+ */
+export type Forecast = { s: number; lo: number; hi: number; pct: number; confidence: "alta" | "media" | "bassa"; anchor: Effort; ageDays: number };
+
+export function forecast(list: Effort[], targetM: number, today: string, windowDays = 365): Forecast | null {
+  const from = new Date(Date.parse(today + "T12:00:00Z") - windowDays * 86400000).toISOString().slice(0, 10);
+  const races = list.filter((e) => e.race && e.m >= BASE_MIN_M && e.day >= from && e.day <= today);
+  if (!races.length) return null;
+  const lastDay = races.reduce((d, e) => (e.day > d ? e.day : d), races[0].day);
+  // della gara più recente si usa lo sforzo con la distanza più vicina all'obiettivo (meno estrapolazione)
+  const same = races.filter((e) => e.day === lastDay);
+  const anchor = same.reduce((b, e) => (Math.abs(Math.log(e.m / targetM)) < Math.abs(Math.log(b.m / targetM)) ? e : b));
+  const s = riegel(anchor.s, anchor.m, targetM);
+  const ageDays = Math.round((Date.parse(today + "T12:00:00Z") - Date.parse(anchor.day + "T12:00:00Z")) / 86400000);
+  const months = ageDays / 30.4;
+  const pct = Math.min(5, 1 + 0.5 * Math.max(0, months - 2));
+  const confidence = ageDays <= 56 ? "alta" : ageDays <= 183 ? "media" : "bassa";
+  return { s, lo: s * (1 - pct / 100), hi: s * (1 + pct / 100), pct, confidence, anchor, ageDays };
+}
+
+/** Tempo su una distanza di prova che corrisponde all'obiettivo (es. il 5 km che conferma 1:34:57). */
+export function equivalent(targetS: number, targetM: number, testM: number): number {
+  return riegel(targetS, targetM, testM);
+}

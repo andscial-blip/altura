@@ -130,15 +130,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
         </Card>
       </div>
 
-      <Card title="Metodo della sintesi di Oggi" icon="target" aside="regole fisse">
-        <p className="note" style={{ marginBottom: 8 }}>La sintesi confronta i dati di oggi con la tua norma recente. Un segnale è &quot;da considerare&quot; quando:</p>
-        <dl className="kv" style={{ maxWidth: 720 }}>
-          <dt>Variabilità notturna</dt><dd>sotto il limite basso della tua fascia abituale (calcolata da Garmin)</dd>
-          <dt>Battito a riposo</dt><dd>5 bpm o più sopra la media dei 7 giorni precedenti</dd>
-          <dt>Sonno</dt><dd>meno di 6 ore, o più di 1 ora sotto la media delle 7 notti precedenti</dd>
-          <dt>Carico 7/28 giorni</dt><dd>rapporto sopra 1,3 (aumento rapido)</dd>
+      <Card title="Metodo del semaforo di Oggi" icon="target" aside="regole fisse">
+        <p className="note" style={{ marginBottom: 8 }}>Il semaforo confronta i dati con la tua norma. Un segnale scatta quando:</p>
+        <dl className="kv" style={{ maxWidth: 760 }}>
+          <dt>Variabilità notturna</dt><dd>media delle ultime 7 notti sotto la tua fascia Garmin, oppure le ultime 2 notti entrambe sotto (Plews 2013)</dd>
+          <dt>Battito a riposo</dt><dd>almeno 5 bpm sopra la media dei 30 giorni per 2 giorni, oppure insieme alla variabilità bassa</dd>
+          <dt>Sonno</dt><dd>ultima notte sotto le 6 ore (conta la durata, non le fasi)</dd>
+          <dt>Come ti senti</dt><dd>1 o 2 su 5 nella domanda del mattino</dd>
         </dl>
-        <p className="note" style={{ marginTop: 8 }}>Valgono solo i dati di oggi. Con meno di due segnali disponibili la sintesi dice &quot;dati insufficienti&quot;. Non è un consiglio medico né di allenamento.</p>
+        <p className="note" style={{ marginTop: 8 }}>Nessun segnale: verde. Uno: giallo. Due o più: rosso. Con caldo, viaggio o alcol il rosso diventa giallo; con la febbre è sempre rosso. Non è un consiglio medico.</p>
       </Card>
 
       <Tokens />

@@ -1,238 +1,165 @@
 import Link from "next/link";
-import { activities, dailyLoad, dailyMulti, goals, lastSyncs, periodActs, planned } from "@/lib/queries";
+import { activities, lastSyncs, periodActs, planned } from "@/lib/queries";
+import { bodyData } from "@/lib/body-server";
 import { progressData } from "@/lib/progress-server";
 import { thumbs } from "@/lib/track";
-import { acwr, acwrZone } from "@/lib/analytics";
-import { isNum, mean, rolling, validDaily } from "@/lib/stats";
-import { todaySummary } from "@/lib/today";
-import { addDays, daysBetween, monday, range } from "@/lib/dates";
-import { ago, day, dec, dur, hm, int, km, SOURCE_LABEL, todayLocal } from "@/lib/fmt";
-import { Gauge, Spark, StackBars, TimeChart } from "@/components/charts";
-import { Card, Empty, Kpi, Legend, Num, TopBar } from "@/components/Head";
-import { ActCard, FAM_LABEL, SPORT_COLOR, StructBar } from "@/components/Act";
-import { Icon, sportMeta } from "@/components/Icon";
+import { peak } from "@/lib/training";
+import { addDays, daysBetween, monday } from "@/lib/dates";
+import { day, dec, dur, hm, int, paceS, SOURCE_LABEL, todayLocal } from "@/lib/fmt";
+import { Spark } from "@/components/charts";
+import { Card, Empty, Info, Kpi, Num, TopBar, Verdict } from "@/components/Head";
+import { ActCard, StructBar } from "@/components/Act";
+import { CheckIn } from "@/components/CheckIn";
+import type { Context } from "@/lib/readiness";
+import { Icon } from "@/components/Icon";
 import { SyncOnOpen } from "@/components/SyncOnOpen";
 
 export const dynamic = "force-dynamic";
 const TYPE_LABEL: Record<string, string> = { facile: "Facile", qualita: "Qualità", lungo: "Lungo", gara: "Gara", test: "Test", forza: "Forza" };
 const TYPE_COLOR: Record<string, string> = { facile: "var(--z2)", qualita: "var(--z4)", lungo: "var(--run)", gara: "var(--sun)", test: "var(--sun)", forza: "var(--str)" };
+const RUN = ["run", "trail_run", "treadmill"];
 
-const M = ["hrv_night", "hrv_baseline_low", "hrv_baseline_high", "resting_hr", "sleep_s", "sleep_score", "body_battery_high", "body_battery_low"];
-
+/** Oggi: come sto e cosa faccio. Giudizio in alto, poi domanda del mattino, seduta, settimana, gara, ultima uscita. */
 export default async function Oggi() {
   const today = todayLocal();
-  const [dm, load, plan, gl, recent, syncs, week, prog, monWeek] = await Promise.all([
-    dailyMulti(M, 40), dailyLoad(60), planned(today, addDays(today, 200)), goals(true), activities({ limit: 4 }), lastSyncs(), periodActs(addDays(today, -6)), progressData(today), periodActs(monday(today)),
+  const mon = monday(today);
+  const [body, plan, recent, syncs, acts, prog] = await Promise.all([
+    bodyData(today), planned(today, addDays(today, 200)), activities({ limit: 1 }), lastSyncs(), periodActs(addDays(today, -35)), progressData(today),
   ]);
   const th = await thumbs(recent.map((a) => a.id));
+  const { r } = body;
 
-  // serie giornaliere pulite (i valori "dato insufficiente" di Garmin sono esclusi)
-  const days = range(addDays(today, -29), today);
-  const ser = (m: string, n = 14) => days.slice(-n).map((d) => validDaily(m, dm[m].find((p) => p.day === d)?.value ?? null));
-  const last = (m: string) => { const v = dm[m].filter((p) => validDaily(m, p.value) !== null); return v[v.length - 1] ?? null; };
-  const before7 = (m: string) => mean(days.slice(-8, -1).map((d) => validDaily(m, dm[m].find((p) => p.day === d)?.value ?? null)));
-  const hrv = last("hrv_night"), lo = last("hrv_baseline_low"), hi = last("hrv_baseline_high");
-  const rhr = last("resting_hr"), sleep = last("sleep_s"), bb = last("body_battery_high");
-  const when = (p: { day: string } | null) => (!p ? "nessun dato" : p.day === today ? "oggi" : `del ${day(p.day, { day: "numeric", month: "short" })}`);
+  const ser = (m: string, n = 14) => { const s = body.ser(m); const from = addDays(today, -n + 1); return Array.from({ length: n }, (_, i) => s.find((p) => p.day === addDays(from, i))?.value ?? null); };
+  const hrv7 = (() => { const s = body.ser("hrv_night").filter((p) => p.day > addDays(today, -7)); return s.length >= 3 ? s.reduce((a, b) => a + b.value, 0) / s.length : null; })();
+  const lo = body.last("hrv_baseline_low"), hi = body.last("hrv_baseline_high"), rhr = body.last("resting_hr"), sleep = body.last("sleep_s");
 
-  const L = acwr(load.map((d) => d.load));
-  const ratio = L.ratio.at(-1) ?? null;
-  const zone = acwrZone(ratio);
-
-  const next = plan.find((p) => p.state === "programmato" && p.day >= today) ?? null;
   const todays = plan.find((p) => p.day === today && p.state === "programmato") ?? null;
-  const race = gl.find((g) => g.kind === "gara" && g.target_date && g.target_date >= today) ?? gl.find((g) => g.target_date && g.target_date >= today) ?? null;
-  const daysTo = race?.target_date ? daysBetween(today, race.target_date) : null;
-  const planWeeks = Math.max(0, ...plan.map((p) => p.week ?? 0));
-  const curWeek = plan.find((p) => p.day >= today)?.week ?? null;
-  // stime e obiettivo: stesso calcolo della pagina Progressi (lib/progress)
-  const g = prog.goal && race && prog.goal.id === race.id ? prog.goal : null;
+  const doneToday = acts.filter((a) => a.day === today && RUN.includes(a.sport));
+  const runs = acts.filter((a) => RUN.includes(a.sport)).map((a) => ({ day: a.day, dist: a.dist }));
+  const agenda = plan.filter((p) => p.state === "programmato" && p.day > today).slice(0, 3);
+  // controllo picchi: la prossima seduta lunga in programma rispetto alla corsa più lunga dei 30 giorni prima
+  const longNext = plan.find((p) => p.state === "programmato" && p.day >= today && p.day <= addDays(today, 7) && p.km && Number(p.km) >= 10);
+  const pk = longNext ? peak(runs, longNext.day, Number(longNext.km) * 1000) : null;
 
-  const sum = todaySummary({
-    today, hrv, hrvLo: lo?.value ?? null, hrvHi: hi?.value ?? null, rhr, rhrMean7: before7("resting_hr"), sleep, sleepMean7: before7("sleep_s"),
-    acwr: ratio, session: todays ? { title: todays.title, type: todays.type, km: todays.km ? Number(todays.km) : null } : null, fmtSleep: hm,
-  });
-  const LEVEL_COLOR = { ok: "var(--good)", one: "var(--sun)", more: "var(--ride)", na: "var(--faint)" };
+  const weekDone = acts.filter((a) => a.day >= mon && RUN.includes(a.sport)).reduce((x, a) => x + a.dist, 0) / 1000;
+  const weekPlan = plan.filter((p) => p.state === "programmato" && p.day >= today && p.day <= addDays(mon, 6) && !(p.day === today && doneToday.length)).reduce((x, p) => x + Number(p.km ?? 0), 0);
+  const weekTot = weekDone + weekPlan;
 
-  const days7 = range(addDays(today, -6), today);
-  const fams = [...new Set(week.map((a) => sportMeta(a.sport).fam))];
-  const stacks = fams.map((f) => ({ name: FAM_LABEL[f] ?? f, color: SPORT_COLOR[f] ?? "var(--oth)", values: days7.map((d) => week.filter((a) => a.day === d && sportMeta(a.sport).fam === f).reduce((s, a) => s + a.time, 0) / 60) }));
-  const wTime = week.reduce((s, a) => s + a.time, 0), wDist = week.reduce((s, a) => s + a.dist, 0), wGain = week.reduce((s, a) => s + a.gain, 0);
-
-  const sleep30 = ser("sleep_s", 30);
-  const nights30 = sleep30.filter(isNum).length;
-  const sleepAvg7 = rolling(sleep30.map((v) => (isNum(v) ? v / 3600 : null)), 7, 3);
+  const g = prog.goal, fc = prog.goalFc;
   const syncErr = syncs.filter((s) => s.status === "error");
-  const RUN = ["run", "trail_run", "treadmill"];
-  const mon = monday(today);
-  const weekDoneKm = monWeek.filter((a) => RUN.includes(a.sport)).reduce((x, a) => x + a.dist, 0) / 1000;
-  const weekPlanKm = plan.filter((p) => p.state === "programmato" && p.day >= today && p.day <= addDays(mon, 6) && !(p.day === today && monWeek.some((a) => a.day === today && RUN.includes(a.sport)))).reduce((x, p) => x + Number(p.km ?? 0), 0);
-  const agenda = plan.filter((p) => p.state === "programmato" && p.day >= today).slice(0, 4);
 
   return (
     <div className="stack-l">
       <section className="band-dark" aria-labelledby="oggi-h">
         <TopBar dark><SyncOnOpen variant="icon" /></TopBar>
         <div className="row between" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
-          <div style={{ minWidth: 0 }}>
-            <p className="date">{day(today, { weekday: "long", day: "numeric", month: "long" })}</p>
-            <h1 id="oggi-h">{todays ? todays.title : "Oggi"}</h1>
-          </div>
+          <p className="date" id="oggi-h">{day(today, { weekday: "long", day: "numeric", month: "long" })}</p>
           <span className="only-d"><SyncOnOpen variant="icon" /></span>
         </div>
-        {/* niente etichette di stato: la sintesi è nella scheda sotto; resta solo l'avviso se una fonte non si sincronizza */}
+        <h1 className="sr">Oggi</h1>
+        <div style={{ marginTop: 8 }}><Verdict level={r.level} sub={r.advice}>{r.title}</Verdict></div>
         {syncErr.length > 0 && <ul className="status" aria-label="Stato"><li><i className="warn" aria-hidden="true" />{`Errore da ${syncErr.map((s) => SOURCE_LABEL[s.source]).join(", ")}`}</li></ul>}
-        <div className="kpis">
-          <Kpi dark label="Variabilità notte" icon="hrv" value={hrv ? int(hrv.value) : "–"} unit="ms" foot={lo && hi ? `fascia ${int(lo.value)}–${int(hi.value)}` : when(hrv)}><Spark values={ser("hrv_night")} /></Kpi>
-          <Kpi dark label="Battito a riposo" icon="heart" value={rhr ? int(rhr.value) : "–"} unit="bpm" foot={when(rhr)}><Spark values={ser("resting_hr")} /></Kpi>
-          <Kpi dark label="Sonno" icon="sleep" value={sleep ? hm(sleep.value) : "–"} foot={sleep?.day === today && last("sleep_score") ? `punteggio ${int(last("sleep_score")!.value)}` : when(sleep)}><Spark values={ser("sleep_s")} /></Kpi>
-          <Kpi dark label="Body Battery max" icon="battery" value={bb ? int(bb.value) : "–"} foot={last("body_battery_low") ? `minimo ${int(last("body_battery_low")!.value)}` : when(bb)}><Spark values={ser("body_battery_high")} /></Kpi>
+        <div className="kpis k3" style={{ marginTop: 14 }}>
+          <Kpi dark label="Variabilità, media 7 notti" icon="hrv" value={hrv7 ? int(hrv7) : "–"} unit="ms" foot={lo && hi ? `tua fascia ${int(lo.value)}–${int(hi.value)}` : "fascia non disponibile"}><Spark values={ser("hrv_night")} /></Kpi>
+          <Kpi dark label="Battito a riposo" icon="heart" value={rhr ? int(rhr.value) : "–"} unit="bpm" foot={rhr?.day === today ? "stamattina" : rhr ? `del ${day(rhr.day, { day: "numeric", month: "short" })}` : "nessun dato"}><Spark values={ser("resting_hr")} /></Kpi>
+          <Kpi dark label="Sonno" icon="sleep" value={sleep ? hm(sleep.value) : "–"} foot={sleep?.day === today ? "stanotte" : "notte non registrata"}><Spark values={ser("sleep_s")} /></Kpi>
         </div>
+        <details className="why">
+          <summary>Da cosa dipende <Icon name="down" size={14} /></summary>
+          <ul className="signals">
+            {r.signals.map((s) => (
+              <li key={s.key}>
+                <span className={`ic ${s.state}`} aria-hidden="true">{s.state === "ok" ? "✓" : s.state === "warn" ? "!" : "–"}</span>
+                <span><b style={{ fontWeight: 600 }}>{s.label}</b>: {s.text}</span>
+                <span className="val">{s.value ?? ""}</span>
+              </li>
+            ))}
+          </ul>
+          {r.softened && <p className="note">Con il contesto che hai indicato ({r.context.join(", ")}) battito e variabilità cambiano anche senza fatica: il rosso diventa giallo.</p>}
+          <p className="note"><Link href="/corpo">Andamento nel tempo in Corpo</Link></p>
+        </details>
       </section>
 
       <div className="dash">
         <div className="col">
-          <Card title="Cosa dicono i dati oggi" icon="target" className="today o1" aside="sintesi automatica">
-            <p className="verdict"><span className="dotl" style={{ background: LEVEL_COLOR[sum.level] }} aria-hidden="true" />{sum.title}</p>
-            <ul>
-              {sum.signals.map((s) => (
-                <li key={s.key}>
-                  <span className={`ic ${s.state}`} aria-hidden="true">{s.state === "ok" ? "✓" : s.state === "warn" ? "!" : "–"}</span>
-                  <span><b style={{ fontWeight: 600 }}>{s.label}</b><span className="sr">{s.state === "ok" ? ": nella norma" : s.state === "warn" ? ": da considerare" : ": non disponibile"}</span><span className="muted">: {s.text}</span></span>
-                  {s.value ? <span className="val">{s.value}</span> : <span />}
-                </li>
-              ))}
-            </ul>
-            <p className="plan">{sum.plan}</p>
-            <p className="note" style={{ marginTop: 8 }}>Confronto con la tua norma recente secondo regole fisse (soglie in Impostazioni › Metodo). Non è un consiglio medico né di allenamento: il riferimento per la seduta resta Runna.</p>
+          {body.checkinAvailable && (
+            <Card className="o1"><CheckIn feel={body.checkin?.feel ?? null} context={(body.checkin?.context ?? []) as Context[]} available /></Card>
+          )}
+
+          <Card title="In programma oggi" icon="calendar" className="o2" aside={<Link href="/allenamento">Allenamento</Link>}>
+            {todays ? (
+              <div className="stack">
+                <div>
+                  <p style={{ fontWeight: 600, fontSize: "1.0625rem" }}>{todays.title}</p>
+                  <p className="note">{TYPE_LABEL[todays.type] ?? todays.type}{todays.km && !/\d\s?km/i.test(todays.title) ? ` · ${dec(todays.km)} km` : ""}{todays.duration_min_s ? ` · ${hm(todays.duration_min_s)}–${hm(todays.duration_max_s)}` : ""}</p>
+                </div>
+                <StructBar steps={todays.structure?.steps} />
+              </div>
+            ) : doneToday.length ? (
+              <p>Fatto: <Link href={`/attivita/${recent[0]?.id ?? ""}`}>{doneToday.map((a) => a.name ?? "corsa").join(", ")}</Link>.</p>
+            ) : <p className="muted">Nessuna seduta Runna oggi.</p>}
+            {pk?.warn && longNext && (
+              <p className="alert" style={{ marginTop: 10 }}><Icon name="load" size={16} />{`${longNext.title} (${day(longNext.day, { weekday: "short", day: "numeric" })}) è ${int(pk.pct)}% più lungo della corsa più lunga degli ultimi 30 giorni (${dec(pk.longest / 1000)} km): oltre il +10% il rischio di infortunio sale. Tienilo facile.`}</p>
+            )}
           </Card>
 
-          <Card title="Ultimi 7 giorni" icon="activity" className="o5" aside={<>{hm(wTime)} · {km(wDist, 0)} km · {int(wGain)} m D+</>}>
-            {week.length ? (
-              <>
-                <StackBars cats={days7} stacks={stacks} fmt={(v) => `${int(v)}`} unit="min" height={110} label="Minuti di allenamento al giorno, ultimi 7 giorni" catLabel={(d) => day(d, { weekday: "short", day: "numeric" })} highlight={6} />
-                <Legend items={stacks.map((s) => ({ label: s.name, color: s.color }))} />
-              </>
-            ) : <Empty inline icon="activity" title="Nessuna attività negli ultimi 7 giorni" text="Le uscite arrivano da Garmin e Strava a ogni sincronizzazione." />}
-          </Card>
-
-          <Card title="Sonno" icon="sleep" className="o6" aside={<Link href="/salute#sonno">Storico completo</Link>}>
-            {nights30 >= 3 ? (
-              <>
-                <TimeChart from={days[0]} to={today} height={100} label="Ore di sonno, ultime 30 notti" fmt={(v) => dec(v, 1)} unit="h"
-                  series={[{ name: "Notte", color: "var(--h2)", kind: "bars", pts: days.map((d, i) => ({ d, v: isNum(sleep30[i]) ? sleep30[i]! / 3600 : null })) }, { name: "Media 7 notti", color: "var(--ink)", kind: "line", pts: days.map((d, i) => ({ d, v: sleepAvg7[i] })) }]} />
-                <Legend items={[{ label: "Notte registrata", color: "var(--h2)" }, { label: "Media 7 notti", color: "var(--ink)", line: true }]} />
-                <p className="note" style={{ marginTop: 6 }}>{nights30} notti registrate su 30 · media {hm(mean(sleep30)! )}. Le notti senza orologio restano vuote, non stimate.</p>
-              </>
-            ) : <Empty inline icon="sleep" title="Poche notti registrate" text="Il sonno arriva dall'orologio Garmin: indossalo di notte per vederlo qui." />}
+          <Card title="Questa settimana" icon="activity" className="o4" aside={<Info title="Settimana"><p>Km di corsa fatti da lunedì (Garmin e Strava) più quelli ancora in programma su Runna fino a domenica.</p></Info>}>
+            <div className="row between" style={{ alignItems: "baseline" }}>
+              <span><Num v={dec(weekDone, 1)} unit="km fatti" /></span>
+              <span className="note">{weekPlan > 0 ? `+ ${dec(weekPlan, 1)} in programma` : "nient'altro in programma"}</span>
+            </div>
+            <div className="wkbar" role="img" aria-label={`${dec(weekDone, 1)} km fatti, ${dec(weekPlan, 1)} km in programma`} style={{ marginTop: 8 }}>
+              <i className="done" style={{ width: `${(weekDone / Math.max(weekTot, 0.1)) * 100}%` }} />
+              <i className="plan" style={{ width: `${(weekPlan / Math.max(weekTot, 0.1)) * 100}%` }} />
+            </div>
+            {agenda.length > 0 && (
+              <ul className="agenda" aria-label="Prossime sedute" style={{ marginTop: 12 }}>
+                {agenda.map((p) => {
+                  const dd = daysBetween(today, p.day);
+                  return (
+                    <li key={p.key} style={{ borderLeftColor: TYPE_COLOR[p.type] ?? "var(--z2)" }}>
+                      <div style={{ minWidth: 0 }}><div className="t">{p.title}</div><div className="note">{TYPE_LABEL[p.type] ?? p.type}</div></div>
+                      <div className="when"><span className="mono">{day(p.day, { weekday: "short", day: "numeric" })}</span><span className="badge">{dd === 1 ? "domani" : `tra ${dd} gg`}</span></div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </Card>
         </div>
 
         <div className="col">
-          {race && daysTo !== null && (
-            <section className="card goal o2" aria-label={`Obiettivo: ${race.name}`}>
+          {g ? (
+            <section className="card goal o3" aria-label={`Gara: ${g.name}`}>
               <div className="row between" style={{ alignItems: "flex-start", flexWrap: "nowrap" }}>
                 <div style={{ minWidth: 0 }}>
-                  <p className="note" style={{ fontWeight: 600 }}><Icon name={race.kind === "test" ? "test" : "race"} size={14} /> {race.kind === "test" ? "Test" : "Gara"} · {day(race.target_date!, { day: "numeric", month: "long", year: "numeric" })}</p>
-                  <h2 style={{ fontSize: "1.0625rem", marginTop: 4 }}>{race.name}</h2>
+                  <p className="note" style={{ fontWeight: 600 }}><Icon name="race" size={14} /> {day(g.date, { day: "numeric", month: "long" })}</p>
+                  <h2 style={{ fontSize: "1.0625rem", marginTop: 4 }}>{g.name}</h2>
                 </div>
-                <div className="count"><Num v={String(daysTo)} unit="giorni" /></div>
+                <div className="count"><Num v={String(g.daysLeft)} unit="giorni" /></div>
               </div>
-              <dl className="kv" style={{ marginTop: 10 }}>
-                {(race.target.time_s || race.target.time_min_s) && <><dt className="note">Obiettivo Runna</dt><dd><Num v={race.target.time_min_s && race.target.time_max_s && race.target.time_min_s !== race.target.time_max_s ? `${dur(race.target.time_min_s)}–${dur(race.target.time_max_s)}` : dur(race.target.time_s)} /></dd></>}
-                {g?.raceEstimate && <><dt className="note">Stima da gara, 12 mesi</dt><dd><Num v={dur(g.raceEstimate)} /> {g.raceStatus && <span className={`badge ${g.raceStatus.onTrack ? "ok" : "warn"}`}>{g.raceStatus.onTrack ? "−" : "+"}{dur(Math.abs(g.raceStatus.gap))}</span>}</dd></>}
-                {g?.estimate && <><dt className="note">Stima recente, 90 giorni</dt><dd><Num v={dur(g.estimate)} /> {g.status && <span className={`badge ${g.status.onTrack ? "ok" : "warn"}`}>{g.status.onTrack ? "−" : "+"}{dur(Math.abs(g.status.gap))}</span>}</dd></>}
-              </dl>
-              {prog.est.length > 0 && (
+              {fc ? (
                 <>
-                <p className="note" style={{ marginTop: 10 }}>Tempi stimati, ultimi 90 giorni</p>
-                <div className="estgrid" style={{ marginTop: 6 }} aria-label="Tempi stimati dagli sforzi degli ultimi 90 giorni">
-                  {prog.est.map((e) => <div key={e.key} className={g?.key === e.key ? "on" : undefined}><span className="note">{e.key === "hm" ? "Mezza" : e.key === "m" ? "Maratona" : e.key === "5k" ? "5 km" : "10 km"}</span><Num v={dur(e.s)} /></div>)}
-                </div>
+                  <p style={{ marginTop: 10, fontWeight: 600 }}>{fc.gap <= 0 ? `In linea per l'obiettivo ${dur(g.target)}.` : `Stima ${dur(Math.round(fc.s / 10) * 10)}: ${dur(fc.gap)} sopra l'obiettivo, ${int(fc.perKm)} s/km.`}</p>
+                  <p className="note">Forbice {dur(Math.round(fc.lo / 60) * 60)}–{dur(Math.round(fc.hi / 60) * 60)} · affidabilità {fc.confidence} · da {fc.anchor.name ?? "gara"}, {day(fc.anchor.day, { day: "numeric", month: "short" })}</p>
                 </>
-              )}
-              {planWeeks > 0 && curWeek && (
-                <>
-                  <div className="goalbar" role="img" style={{ gridTemplateColumns: `repeat(${planWeeks}, minmax(0, 1fr))` }} aria-label={`Settimana ${curWeek} di ${planWeeks} del piano`}>
-                    {Array.from({ length: planWeeks }, (_, i) => <i key={i} className={i + 1 < curWeek ? "d" : i + 1 === curWeek ? "now" : undefined} />)}
-                  </div>
-                  <div className="row between note" style={{ marginTop: 6 }}><span>Settimana {curWeek} di {planWeeks}</span><Link href="/progressi">Progressi</Link></div>
-                </>
-              )}
+              ) : <p className="note" style={{ marginTop: 10 }}>Nessuna gara o test negli ultimi 12 mesi: la stima arriva con il primo test.</p>}
+              <div className="row between note" style={{ marginTop: 8 }}>
+                <span>{prog.nextTest ? `Prossimo test: ${day(prog.nextTest.date, { day: "numeric", month: "short" })}` : `Obiettivo ${dur(g.target)} · ${paceS(g.target ? g.target / (g.distM / 1000) : null)} /km`}</span>
+                <Link href="/gara">Gara</Link>
+              </div>
             </section>
+          ) : (
+            <Card title="Gara" icon="race" className="o3"><Empty inline icon="race" title="Nessuna gara in programma" text="Le gare arrivano da Runna; puoi aggiungerne una in Gara." action={{ href: "/gara", label: "Vai a Gara" }} /></Card>
           )}
 
-          <Card title="Settimana di corsa" icon="calendar" className="o3" aside={<Link href="/piano">Piano</Link>}>
-            {next || weekDoneKm > 0 ? (
-              <div className="stack">
-                <div>
-                  <div className="row between" style={{ alignItems: "baseline" }}>
-                    <span className="note">Da lunedì</span>
-                    <span><Num v={dec(weekDoneKm, 1)} unit="km fatti" />{weekPlanKm > 0 && <span className="note"> + {dec(weekPlanKm, 1)} in programma</span>}</span>
-                  </div>
-                  <div className="wkbar" role="img" aria-label={`${dec(weekDoneKm, 1)} km fatti da lunedì, ${dec(weekPlanKm, 1)} km ancora in programma su Runna`}>
-                    <i className="done" style={{ width: `${(weekDoneKm / Math.max(weekDoneKm + weekPlanKm, 0.1)) * 100}%` }} />
-                    <i className="plan" style={{ width: `${(weekPlanKm / Math.max(weekDoneKm + weekPlanKm, 0.1)) * 100}%` }} />
-                  </div>
-                  <div className="row between note" style={{ marginTop: 4 }}><span>fatti</span><span>+ in programma (Runna)</span><span className="mono">{dec(weekDoneKm + weekPlanKm, 0)} km</span></div>
-                </div>
-                {agenda.length > 0 && (
-                  <ul className="agenda" aria-label="Prossime sedute">
-                    {agenda.map((p, k) => {
-                      const dd = daysBetween(today, p.day);
-                      return (
-                        <li key={p.key} style={{ borderLeftColor: TYPE_COLOR[p.type] ?? "var(--z2)" }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div className="t">{p.title}</div>
-                            <div className="note">{TYPE_LABEL[p.type] ?? p.type}{p.km ? ` · ${dec(p.km)} km` : ""}{p.duration_min_s ? ` · ${hm(p.duration_min_s)}–${hm(p.duration_max_s)}` : ""}</div>
-                            {k === 0 && <div style={{ marginTop: 6 }}><StructBar steps={p.structure?.steps} /></div>}
-                          </div>
-                          <div className="when">
-                            <span className="mono">{day(p.day, { weekday: "short", day: "numeric" })}</span>
-                            <span className={`badge ${dd === 0 ? "warn" : ""}`}>{dd === 0 ? "oggi" : dd === 1 ? "domani" : `tra ${dd} gg`}</span>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            ) : <Empty inline icon="calendar" title="Nessuna seduta in programma" text="Le sedute arrivano dal calendario iCal di Runna." action={{ href: "/impostazioni", label: "Collegamenti" }} />}
-          </Card>
-
-          <Card title="Carico" icon="load" className="o4" aside="7 giorni su 28">
-            <div className="row" style={{ flexWrap: "nowrap" }}>
-              <Gauge value={ratio} lo={0.4} hi={2} bandLo={0.8} bandHi={1.3} label={`Rapporto carico acuto/cronico ${ratio === null ? "non disponibile" : dec(ratio, 2)}, fascia verde da 0,8 a 1,3`} />
-              <div style={{ minWidth: 0 }}>
-                <div className="row" style={{ gap: 8 }}><span style={{ fontSize: "1.375rem" }}><Num v={ratio === null ? "–" : dec(ratio, 2)} /></span><span className={`badge ${zone.cls}`}>{zone.label}</span></div>
-                <p className="note" style={{ marginTop: 6 }}>Carico Garmin medio degli ultimi 7 giorni diviso per quello degli ultimi 28. Fascia verde 0,8–1,3: aumento graduale.</p>
-              </div>
-            </div>
-          </Card>
-
-          <details className="card more o7">
-            <summary>Fonti dei dati <Icon name="next" size={16} /></summary>
-            <div className="stack" style={{ marginTop: 6 }}>
-              {["garmin", "strava", "runna", "apple_health"].map((s) => {
-                const r = syncs.find((x) => x.source === s);
-                return (
-                  <div key={s} className="row between">
-                    <span className="src" data-s={s}><i />{SOURCE_LABEL[s]}</span>
-                    <span className="note">{r ? `${ago(r.started_at)} · ` : ""}<span className={`badge ${!r ? "" : r.status === "ok" ? "ok" : r.status === "error" ? "bad" : "warn"}`}>{!r ? "mai" : r.status === "ok" ? "riuscita" : r.status === "partial" ? "parziale" : r.status === "running" ? "in corso" : "errore"}</span></span>
-                  </div>
-                );
-              })}
-              <p className="note">Stime dei tempi: formula di Riegel (tempo × (distanza / distanza dello sforzo)^1,06) sullo sforzo più veloce da 5 km in su degli ultimi 90 giorni (parziali Garmin o risultati ufficiali inseriti in Progressi). È un riferimento, non una promessa.</p>
-            </div>
-          </details>
+          <section className="o5" aria-labelledby="ult-h">
+            <div className="row between" style={{ marginBottom: 10 }}><h2 id="ult-h" style={{ fontSize: "1rem" }}>Ultima uscita</h2><Link href="/attivita" className="note">Tutte</Link></div>
+            {recent.length ? <ActCard a={recent[0]} path={th[recent[0].id]} />
+              : <div className="card"><Empty icon="activity" title="Ancora nessuna attività" text="Collega Garmin o Strava: le uscite compaiono qui dopo la prima sincronizzazione." action={{ href: "/impostazioni", label: "Collegamenti" }} /></div>}
+          </section>
         </div>
       </div>
-
-      <section aria-labelledby="recenti-h">
-        <div className="row between" style={{ marginBottom: 10 }}><h2 id="recenti-h">Recenti</h2><Link href="/attivita" className="note">Tutte le attività</Link></div>
-        {recent.length ? <div className="acards">{recent.map((a) => <ActCard key={a.id} a={a} path={th[a.id]} compact />)}</div>
-          : <div className="card"><Empty icon="activity" title="Ancora nessuna attività" text="Collega Garmin o Strava: le uscite compaiono qui dopo la prima sincronizzazione." action={{ href: "/impostazioni", label: "Vai ai collegamenti" }} /></div>}
-      </section>
     </div>
   );
 }

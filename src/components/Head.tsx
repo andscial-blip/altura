@@ -113,3 +113,23 @@ export function Seg({ items, label, className = "" }: { items: { href: string; l
     </nav>
   );
 }
+
+/** Spiegazione a richiesta: un pulsante "i" che apre un riquadro (metodo, fonti, limiti) invece dei paragrafi sotto i grafici. */
+export function Info({ title = "Come si calcola", children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <details className="info">
+      <summary aria-label={title} title={title}><span aria-hidden="true">i</span></summary>
+      <div className="infobox" role="note"><b>{title}</b>{children}</div>
+    </details>
+  );
+}
+
+/** Giudizio in una riga, con il pallino del semaforo. */
+export function Verdict({ level, children, sub }: { level: "verde" | "giallo" | "rosso" | "na"; children: React.ReactNode; sub?: React.ReactNode }) {
+  return (
+    <div className={`verdict-b v-${level}`}>
+      <p className="vt"><span className="dotl" aria-hidden="true" />{children}</p>
+      {sub && <p className="vs">{sub}</p>}
+    </div>
+  );
+}

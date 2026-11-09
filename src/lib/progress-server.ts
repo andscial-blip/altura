@@ -1,7 +1,7 @@
 import "server-only";
-import { goals, results, splitRows } from "@/lib/queries";
+import { goals, periodActs, results, splitRows } from "@/lib/queries";
 import { addDays, daysBetween } from "@/lib/dates";
-import { efforts, estimates, estimateSeries, goalStatus, records, distKey, DISTS, type DistKey } from "@/lib/progress";
+import { efforts, equivalent, estimates, estimateSeries, forecast, goalStatus, records, distKey, DISTS, type DistKey } from "@/lib/progress";
 
 export const WINDOW = 90;
 /** finestra per le stime da gara: le gare sono rare, un anno è il compromesso tra attualità e disponibilità */
@@ -9,7 +9,7 @@ export const RACE_WINDOW = 365;
 
 /** Tutto quello che serve a Oggi e a Progressi: sforzi, stime di oggi e di 3 mesi fa, record, obiettivo in corso. */
 export async function progressData(today: string) {
-  const [rows, manual, gl] = await Promise.all([splitRows(), results(), goals(true)]);
+  const [rows, manual, gl, acts] = await Promise.all([splitRows(), results(), goals(true), periodActs(addDays(today, -112))]);
   const list = efforts(rows, manual);
   const from = addDays(today, -WINDOW);
   const est = estimates(list, from, today);
@@ -47,8 +47,22 @@ export async function progressData(today: string) {
       raceSeries: key ? estimateSeries(list, key, ends, RACE_WINDOW, true) : [],
     };
   }
-    // prossimo test (es. cronometro Runna) prima della gara: è lo sforzo che renderà la stima più affidabile
+    // stima unica (ancorata a gare e test) per l'obiettivo e per le distanze classiche
+  const fcBy = Object.fromEntries(DISTS.filter((d) => d.m >= 5000).map((d) => [d.key, forecast(list, d.m, today)])) as Partial<Record<DistKey, ReturnType<typeof forecast>>>;
+  const fcGoal = goal ? forecast(list, goal.distM, today) : null;
+  // tendenza della forma: metri per battito nelle corse da 4 km in su, ultime 4 settimane contro le 12 precedenti (solo una freccia)
+  const eff = (a: (typeof acts)[number]) => (a.hr && a.time ? a.dist / ((a.time / 60) * a.hr) : null);
+  const runs = acts.filter((a) => ["run", "trail_run", "treadmill"].includes(a.sport) && a.dist >= 4000 && eff(a));
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : null);
+  const recent = avg(runs.filter((a) => a.day > addDays(today, -28)).map((a) => eff(a)!));
+  const before = avg(runs.filter((a) => a.day <= addDays(today, -28)).map((a) => eff(a)!));
+  const trendPct = recent && before ? (recent / before - 1) * 100 : null;
+  const trend = trendPct === null ? null : trendPct > 2 ? "su" : trendPct < -2 ? "giu" : "stabile";
+  const goalFc = goal && fcGoal ? { ...fcGoal, gap: fcGoal.s - (goal.target ?? fcGoal.s), perKm: (fcGoal.s - (goal.target ?? fcGoal.s)) / (goal.distM / 1000) } : null;
+  const test5k = goal?.target ? equivalent(goal.target, goal.distM, 5000) : null;
+
+  // prossimo test (es. cronometro Runna) prima della gara: è lo sforzo che renderà la stima più affidabile
   const nextTest = gl.filter((g) => g.kind === "test" && g.target_date && g.target_date >= today && (!goal || g.target_date <= goal.date))
     .sort((a, b) => a.target_date!.localeCompare(b.target_date!))[0] ?? null;
-  return { list, est, past, estRace, recAll, rec90, goal, manual, from, DISTS, nextTest: nextTest ? { name: nextTest.name, date: nextTest.target_date! } : null };
+  return { list, est, past, estRace, recAll, rec90, goal, manual, from, DISTS, nextTest: nextTest ? { name: nextTest.name, date: nextTest.target_date! } : null, fcBy, goalFc, trend, trendPct, test5k };
 }

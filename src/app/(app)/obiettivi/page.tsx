@@ -4,7 +4,7 @@ import { invalidate } from "@/lib/cache";
 import { q } from "@/lib/db";
 import { day, dec, dur, km, todayLocal } from "@/lib/fmt";
 import { progressData } from "@/lib/progress-server";
-import { riegel } from "@/lib/stats";
+import { forecast } from "@/lib/progress";
 import { Card, Empty, Head } from "@/components/Head";
 import { Icon } from "@/components/Icon";
 
@@ -42,11 +42,10 @@ export default async function Page() {
   const today = todayLocal();
   const prog = await progressData(today);
   // stima per qualunque distanza: lo sforzo da 5 km in su degli ultimi 90 giorni che dà il tempo più veloce (come in Progressi)
-  const pool = prog.list.filter((e) => e.m >= 5000 && e.day >= prog.from);
-  const predict = (m: number) => pool.length ? Math.min(...pool.map((e) => riegel(e.s, e.m, m))) : null;
+  const predict = (m: number) => forecast(prog.list, m, today)?.s ?? null;
   return (
     <div className="stack-l">
-      <Head icon="target" title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
+      <Head icon="target" title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/gara", label: "Gara" }} />
       {goals.length === 0 && <div className="card"><Empty icon="target" title="Nessun obiettivo" text="Gare e test arrivano da Runna da soli; qui sotto puoi aggiungere volumi settimanali o dislivello." /></div>}
       <div className="grid g2">
         {goals.map((g) => {
@@ -72,7 +71,7 @@ export default async function Page() {
                 {race && <div className="count">{daysLeft}<small>giorni</small></div>}
               </div>
               <p style={{ marginTop: 8 }}>{line}</p>
-              {pred && <p className="note">Stima di oggi: <b className="mono">{dur(pred)}</b> (Riegel dal miglior sforzo da 5 km in su degli ultimi 90 giorni){t.time_s ? `, ${pred <= t.time_s ? "dentro" : "oltre"} l'obiettivo di ${dur(Math.abs(pred - t.time_s))}` : ""}.</p>}
+              {pred && <p className="note">Stima di oggi: <b className="mono">{dur(pred)}</b> (dall&apos;ultima gara o test dei 12 mesi){t.time_s ? `, ${pred <= t.time_s ? "dentro" : "oltre"} l'obiettivo di ${dur(Math.abs(pred - t.time_s))}` : ""}.</p>}
               <div className="row between" style={{ marginTop: 10 }}>
                 <span className="note">{g.target_date ? day(g.target_date, { day: "numeric", month: "long", year: "numeric" }) : "senza data"}</span>
                 <form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn sm">{g.active ? "Archivia" : "Riattiva"}</button></form>
@@ -92,7 +91,7 @@ export default async function Page() {
           <button className="btn primary" type="submit">Aggiungi obiettivo</button>
         </form>
       </Card>
-      <p className="note">Stima: formula di Riegel (tempo × (distanza obiettivo / distanza)^1,06) sullo sforzo più veloce da 5 km in su degli ultimi 90 giorni, dai parziali Garmin o dai risultati ufficiali inseriti in <Link href="/progressi">Progressi</Link>. Presuppone una preparazione specifica sulla distanza.</p>
+      <p className="note">Stima: stesso metodo della pagina <Link href="/gara">Gara</Link>, ancorato all&apos;ultima gara o test dei 12 mesi.</p>
     </div>
   );
 }

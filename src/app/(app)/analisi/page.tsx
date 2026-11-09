@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { dailyLoad, goals, periodActs, runBests, runEfficiency, sportsPresent } from "@/lib/queries";
-import { acwr, acwrZone, efficiency } from "@/lib/analytics";
-import { isNum, linreg, pctDelta, riegel, rolling } from "@/lib/stats";
+import { goals, periodActs, runBests, runEfficiency, sportsPresent } from "@/lib/queries";
+import { efficiency } from "@/lib/analytics";
+import { isNum, linreg, pctDelta, rolling } from "@/lib/stats";
 import { addDays, monday, range } from "@/lib/dates";
 import { day, dec, dur, hm, int, km, paceS, todayLocal } from "@/lib/fmt";
 import { Heatmap, StackBars, TimeChart } from "@/components/charts";
@@ -35,7 +35,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
 
   const sparse = ["nuoto", "bici", "altro"].includes(tab.k);
   const [all, load, eff, bests, gl] = await Promise.all([
-    periodActs(sparse ? "1990-01-01" : addDays(prevFrom, -21)), tab.k === "tutte" ? dailyLoad(days + 28) : Promise.resolve([]),
+    periodActs(sparse ? "1990-01-01" : addDays(prevFrom, -21)), Promise.resolve([]),
     tab.k === "corsa" ? runEfficiency(Math.max(days, 182)) : Promise.resolve([]), tab.k === "corsa" ? runBests(Math.max(days, 182)) : Promise.resolve([]), goals(true),
   ]);
   const mine = (a: { sport: string }) => tab.k === "tutte" || tab.sports.includes(a.sport);
@@ -69,7 +69,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <div className="stack-l">
-      <Head icon="chart" title="Analisi" sub="Volumi, tendenze e prestazioni. Sotto ogni grafico: metodo, fonte e limiti." acts={<Link href="/progressi" className="btn sm"><Icon name="trend" size={16} />Progressi</Link>} />
+      <Head icon="chart" title="Analisi per disciplina" back={{ href: "/allenamento", label: "Allenamento" }} sub="Volumi, tendenze e prestazioni per corsa, montagna, bici e nuoto." />
       <nav className="tabs" aria-label="Disciplina">
         {tabs.map((t) => <Link key={t.k} href={`/analisi?sport=${t.k}&g=${W}`} aria-current={t.k === tab.k ? "true" : undefined}><Icon name={t.icon} size={16} />{t.label}</Link>)}
       </nav>
@@ -112,7 +112,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
         </>
       )}
 
-      {tab.k === "tutte" && <LoadCard load={load} from={from} today={today} />}
       {tab.k === "corsa" && <EffCard eff={eff} today={today} W={W} />}
       {tab.k === "montagna" && <Places acts={cur} />}
     </div>
@@ -129,20 +128,6 @@ function SportMix({ cur }: { cur: A[] }) {
     <Card title="Tempo per disciplina" icon="clock">
       <div className="stackbar" role="img" aria-label={rows.map(([f, v]) => `${FAM_LABEL[f]} ${int((v / t) * 100)}%`).join(", ")}>{rows.map(([f, v]) => <span key={f} style={{ flex: `${v} 0 0`, background: SPORT_COLOR[f] }} />)}</div>
       <table className="t" style={{ marginTop: 12 }}><tbody>{rows.map(([f, v]) => <tr key={f}><td><span className="legend" style={{ margin: 0 }}><span><i style={{ background: SPORT_COLOR[f] }} />{FAM_LABEL[f]}</span></span></td><td className="r mono">{hm(v)}</td><td className="r mono">{int((v / t) * 100)}%</td></tr>)}</tbody></table>
-    </Card>
-  );
-}
-
-function LoadCard({ load, from, today }: { load: { day: string; load: number; n_without: number }[]; from: string; today: string }) {
-  const L = acwr(load.map((d) => d.load));
-  const r = L.ratio.at(-1) ?? null, z = acwrZone(r);
-  const noLoad = load.filter((d) => d.day >= from).reduce((s, d) => s + d.n_without, 0);
-  return (
-    <Card title="Carico acuto / cronico" icon="load" aside={<span className={`badge ${z.cls}`}>{r === null ? "–" : dec(r, 2)} · {z.label}</span>}>
-      <TimeChart from={from} to={today} label="Rapporto carico acuto/cronico" fmt={(v) => dec(v, 2)} band={{ lo: 0.8, hi: 1.3 }} refLine={{ v: 1 }}
-        series={[{ name: "Rapporto", color: "var(--accent)", kind: "line", pts: load.map((d, i) => ({ d: d.day, v: L.ratio[i] })) }]} />
-      <Legend items={[{ label: "Rapporto 7/28 giorni", color: "var(--accent)", line: true }, { label: "Fascia 0,8–1,3", color: "var(--band)" }]} />
-      <p className="note" style={{ marginTop: 6 }}>Metodo: media del carico di allenamento Garmin degli ultimi 7 giorni divisa per quella degli ultimi 28 (Gabbett 2016). Limiti: indicatore descrittivo, la capacità di prevedere infortuni è discussa; le uscite senza carico Garmin contano zero{noLoad ? ` (${noLoad} nel periodo)` : ""}.</p>
     </Card>
   );
 }
@@ -169,24 +154,13 @@ function EffCard({ eff, today, W }: { eff: { day: string; v_mpm: number; hr: num
 function Bests({ bests, gl, today }: { bests: { id: string; day: string; name: string | null; s5: number | null; s10: number | null }[]; gl: { name: string; kind: string; target_date: string | null; target: Record<string, number | null> }[]; today: string }) {
   const b5 = bests.filter((b) => isNum(b.s5)).sort((a, b) => a.s5! - b.s5!)[0];
   const b10 = bests.filter((b) => isNum(b.s10)).sort((a, b) => a.s10! - b.s10!)[0];
-  const race = gl.find((g) => g.kind === "gara" && g.target_date && g.target_date >= today && g.target.dist_m);
-  const base = b10 ? { t: b10.s10!, d: 10000 } : b5 ? { t: b5.s5!, d: 5000 } : null;
-  const pred = base && race?.target.dist_m ? riegel(base.t, base.d, race.target.dist_m) : null;
-  const tgt = race?.target.time_s ?? null;
   return (
     <Card title="Migliori tempi" icon="clock" aside="ultimi 6 mesi">
       <div className="kpis k3" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
         <Kpi label="5 km" value={b5 ? dur(b5.s5) : "–"} foot={b5 ? <Link href={`/attivita/${b5.id}`}>{day(b5.day, { day: "numeric", month: "short" })} · {paceS(b5.s5! / 5)}/km</Link> : undefined} />
         <Kpi label="10 km" value={b10 ? dur(b10.s10) : "–"} foot={b10 ? <Link href={`/attivita/${b10.id}`}>{day(b10.day, { day: "numeric", month: "short" })} · {paceS(b10.s10! / 10)}/km</Link> : undefined} />
       </div>
-      {race && pred && (
-        <div style={{ marginTop: 12 }}>
-          <div className="row between"><span className="note">{race.name}: previsione</span><b className="mono">{dur(pred)}</b></div>
-          {tgt && <div className="row between"><span className="note">Obiettivo Runna</span><span className="mono">{dur(tgt)}</span></div>}
-          {tgt && <div className="row between"><span className="note">Differenza</span><span className={`mono ${pred <= tgt ? "up" : "dn"}`}>{pred <= tgt ? "−" : "+"}{dur(Math.abs(pred - tgt))}</span></div>}
-        </div>
-      )}
-      <p className="note" style={{ marginTop: 8 }}>Parziale più veloce dentro una corsa, calcolato da Garmin (non necessariamente una gara). Previsione: formula di Riegel con esponente 1,06 dal miglior 10 km (o 5 km); presuppone allenamento specifico sulla distanza.</p>
+      <p className="note" style={{ marginTop: 8 }}>Tratto più veloce dentro una corsa, misurato da Garmin: quasi sempre un allenamento, indicativo. La stima di gara è in <Link href="/gara">Gara</Link>.</p>
     </Card>
   );
 }
