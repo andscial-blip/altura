@@ -81,12 +81,29 @@ describe("formato a colonne di Comandi Rapidi", () => {
   });
 });
 
-import { flatToSeries } from "@/lib/apple";
+import { flatToSeries, numberStyle } from "@/lib/apple";
 describe("una metrica per richiesta", () => {
   it("passi e allenamenti nel formato piatto", () => {
     const a = fromSeries(SeriesPayload.parse(flatToSeries({ metric: "steps", values: ["9.001"], dates: ["2026-11-08T00:00:00Z"], tz: "UTC" })));
     expect(samplesToDaily(a.payload, "UTC")[0]).toMatchObject({ metric: "steps", value: 9001 });
     const w = fromSeries(SeriesPayload.parse(flatToSeries({ metric: "workouts", types: "Corsa", starts: "2026-11-08T03:00:00Z", ends: "2026-11-08T03:40:00Z", distances: "8 km" })));
     expect(w.payload.workouts?.[0]).toMatchObject({ type: "Corsa", distance: 8 });
+  });
+  it("calorie con punto decimale come le manda l'iPhone (caso reale del 9/11)", () => {
+    const vals = "2449.1\n875.484\n89\n947.5\n988.6\n41.556\n1519.2\n19.112";
+    const dates = ["02", "03", "04", "05", "06", "07", "08", "09"].map((d) => `2026-11-${d}T00:00:00Z`).join("\n");
+    const a = fromSeries(SeriesPayload.parse(flatToSeries({ metric: "active_energy", values: vals, dates, tz: "UTC" })));
+    const r = samplesToDaily(a.payload, "UTC");
+    expect(r.find((x) => x.day === "2026-11-03")?.value).toBe(875.5);
+    expect(r.find((x) => x.day === "2026-11-07")?.value).toBe(41.6);
+    expect(Math.max(...r.map((x) => x.value))).toBeLessThan(3000);
+  });
+  it("stile dei numeri deciso sulla lista", () => {
+    expect(numberStyle(["875.484"], "active_kcal")).toBe("dot");
+    expect(numberStyle(["8.120"], "steps")).toBe("it");
+    expect(numberStyle(["1.234,5", "7,5"])).toBe("it");
+    expect(numberStyle(["8.120", "947.5"], "steps")).toBe("dot");
+    expect(itNumber("875.484", "dot")).toBe(875.484);
+    expect(itNumber("1.234,5", "it")).toBe(1234.5);
   });
 });

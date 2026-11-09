@@ -101,12 +101,31 @@ export function asList(v: unknown): string[] {
   return t.includes("\n") ? t.split("\n").map((x) => x.trim()).filter(Boolean) : [t];
 }
 
-/** Numeri come li scrive iOS in italiano: "1.234,5", "7,5 km", "61 ms". */
-export function itNumber(v: string): number | undefined {
+/** Metriche che sono sempre numeri interi: "8.120" lì può essere solo il separatore delle migliaia. */
+const INTEGER_METRICS = new Set(["steps", "stand_h"]);
+
+/**
+ * Stile dei numeri di una lista. Comandi Rapidi a volte scrive "875.484" (punto decimale, fino a 3 cifre), a volte il
+ * formato italiano "1.234,5". "875.484" da solo è ambiguo: decide la lista intera ("2449.1" nello stesso elenco prova il
+ * punto decimale) e, se non basta, il tipo di metrica (i passi non hanno decimali).
+ */
+export function numberStyle(vals: string[], metric?: string): "dot" | "it" | undefined {
+  const comma = vals.some((v) => /\d,\d/.test(v));
+  const dotDecimal = vals.some((v) => /\d\.(\d{1,2}|\d{4,})(?!\d)/.test(v) && !/\d,\d/.test(v));
+  if (comma && !dotDecimal) return "it";
+  if (dotDecimal && !comma) return "dot";
+  if (comma && dotDecimal) return undefined;
+  return metric && INTEGER_METRICS.has(metric) ? "it" : "dot";
+}
+
+/** Numeri come li scrive iOS: "1.234,5", "7,5 km", "61 ms", "875.484". Senza stile usa una regola per singolo valore. */
+export function itNumber(v: string, style?: "dot" | "it"): number | undefined {
   const m = /-?[\d.,]+/.exec(v.replace(/\s/g, ""));
   if (!m) return undefined;
   let t = m[0];
-  if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+  if (style === "dot") t = t.replace(/,/g, "");
+  else if (style === "it") t = t.replace(/\./g, "").replace(",", ".");
+  else if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
   else if (t.includes(",")) t = t.replace(",", ".");
   else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
   const n = Number(t);
@@ -148,6 +167,7 @@ export function fromSeries(sp: z.infer<typeof SeriesPayload>): { payload: Health
     if (vals.length !== dates.length) warnings.push(`${name}: ${vals.length} valori ma ${dates.length} date`);
     const n = Math.min(vals.length, dates.length);
     let bad = 0;
+    const style = numberStyle(vals, MAP[id].metric);
     for (let i = 0; i < n; i++) {
       const start = parseDate(dates[i], tz);
       if (!start) { bad++; continue; }
@@ -156,7 +176,7 @@ export function fromSeries(sp: z.infer<typeof SeriesPayload>): { payload: Health
         if (!end) { bad++; continue; }
         samples.push({ type: id, start, end, category: vals[i] });
       } else {
-        const v = itNumber(vals[i]);
+        const v = itNumber(vals[i], style);
         if (v === undefined) { bad++; continue; }
         const u = col.unit ?? (/[a-z%]+/i.exec(vals[i].replace(/^[-\d.,\s]+/, ""))?.[0]);
         samples.push({ type: id, start, value: v, unit: u });
@@ -168,10 +188,11 @@ export function fromSeries(sp: z.infer<typeof SeriesPayload>): { payload: Health
   if (sp.workouts) {
     const ty = asList(sp.workouts.types), st = asList(sp.workouts.starts), en = asList(sp.workouts.ends);
     const di = asList(sp.workouts.distances), ke = asList(sp.workouts.energies);
+    const ds = numberStyle(di), es = numberStyle(ke);
     for (let i = 0; i < Math.min(ty.length, st.length, en.length); i++) {
       const s = parseDate(st[i], tz), e = parseDate(en[i], tz);
       if (!s || !e) { warnings.push(`allenamento ${i + 1}: date non leggibili`); continue; }
-      workouts.push({ type: ty[i], start: s, end: e, distance: di[i] ? itNumber(di[i]) : undefined, distance_unit: sp.workouts.distance_unit ?? (/\bm\b/.test(di[i] ?? "") ? "m" : "km"), energy_kcal: ke[i] ? itNumber(ke[i]) : undefined });
+      workouts.push({ type: ty[i], start: s, end: e, distance: di[i] ? itNumber(di[i], ds) : undefined, distance_unit: sp.workouts.distance_unit ?? (/\bm\b/.test(di[i] ?? "") ? "m" : "km"), energy_kcal: ke[i] ? itNumber(ke[i], es) : undefined });
     }
   }
   return { payload: { tz, device: sp.device, samples, workouts }, warnings };
