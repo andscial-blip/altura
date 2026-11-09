@@ -94,13 +94,20 @@ export function clusters(list: Prepared[], minSize = 2): string[][] {
   return groups(list, minSize).map((g) => g.ids);
 }
 
+/**
+ * Gruppi coerenti con il dettaglio della corsa: ogni gruppo è "tutte le corse sullo stesso percorso della più recente"
+ * (lo stesso confronto che si vede aprendo quella corsa). Le corse già assegnate non aprono un gruppo nuovo.
+ */
 export function groups(list: Prepared[], minSize = 2): { ids: string[]; dir: string }[] {
-  const gs: { ref: Prepared; ids: string[] }[] = [];
+  const used = new Set<string>();
+  const out: { ids: string[]; dir: string }[] = [];
   for (const r of list) {
-    const g = gs.find((x) => sameRoute(x.ref, r));
-    if (g) g.ids.push(r.id); else gs.push({ ref: r, ids: [r.id] });
+    if (used.has(r.id)) continue;
+    const ids = list.filter((x) => x.id === r.id || sameRoute(r, x)).map((x) => x.id);
+    for (const id of ids) used.add(id);
+    if (ids.length >= minSize) out.push({ ids, dir: heading(r) });
   }
-  return gs.filter((g) => g.ids.length >= minSize).map((g) => ({ ids: g.ids, dir: heading(g.ref) }));
+  return out;
 }
 
 const WINDS = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ovest", "ovest", "nord-ovest"];

@@ -229,7 +229,7 @@ async function routeGroups_() {
   return groups(prep, 2);
 }
 
-/** Corse sullo stesso percorso di una data: candidati con partenza entro ~1,5 km e distanza ±10%, poi confronto della forma del tracciato. */
+/** Corse sullo stesso percorso di una data: candidati con partenza entro ~2 km e distanza ±10%, poi confronto della forma del tracciato. */
 async function sameRouteIds_(id: string) {
   const rows = await q<{ id: string; dist: number; lat: (number | null)[]; lon: (number | null)[] }>(
     `with me as (select a.distance_m, t.start_lat, t.start_lon from sport.activities a join sport.activity_streams t on t.activity_id = a.id where a.id = $1 and t.start_lat is not null)
@@ -238,7 +238,7 @@ async function sameRouteIds_(id: string) {
             array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lon
        from sport.activities a join sport.activity_streams t on t.activity_id = a.id, me
       where not a.hidden and a.sport in ('run','trail_run') and t.start_lat is not null
-        and abs(t.start_lat - me.start_lat) < 0.014 and abs(t.start_lon - me.start_lon) < 0.014
+        and abs(t.start_lat - me.start_lat) < 0.02 and abs(t.start_lon - me.start_lon) < 0.02
         and a.distance_m between me.distance_m * 0.9 and me.distance_m * 1.1`, [id]);
   if (rows.length < 2) return [];
   const { prepare, matches } = await import("@/lib/routes");

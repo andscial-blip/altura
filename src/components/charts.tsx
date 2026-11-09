@@ -52,10 +52,11 @@ function dateTicks(t0: number, t1: number, n = 3) {
 export type Series = { name: string; pts: { d: string; v: number | null }[]; kind?: "line" | "area" | "dots" | "bars"; color: string; width?: number; dash?: boolean; gapDays?: number; tip?: boolean };
 
 /** Serie temporali su asse del tempo reale, con fascia di riferimento, linea di riferimento e punto di oggi. */
-export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain, zoomHref, invert = false }: {
+export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain, zoomHref, invert = false, step }: {
   series: Series[]; from: string; to: string; band?: { lo: number; hi: number } | null; refLine?: { v: number; dash?: boolean } | null;
   fmt: (v: number) => string; unit?: string; height?: number; label: string; maxGapDays?: number; today?: boolean; domain?: [number, number]; zoomHref?: string;
   /** asse rovesciato: valori bassi in alto (passo, tempi: più in alto = più veloce) */ invert?: boolean;
+  /** tacche a multipli di step (es. 300 s = 5 minuti), raddoppiato finché ne restano al massimo 4 */ step?: number;
 }) {
   const t0 = dms(from), t1 = dms(to);
   const all = series.flatMap((s) => s.pts.map((p) => p.v)).filter(isNum);
@@ -64,7 +65,9 @@ export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", hei
   let hi = domain?.[1] ?? Math.max(...all, band?.hi ?? -Infinity, refLine?.v ?? -Infinity);
   if (!domain) { const p = (hi - lo) * 0.08 || 1; lo -= p; hi += p; if (series.some((s) => s.kind === "bars")) lo = Math.min(0, lo); }
   const Y = invert ? yScale(hi, lo) : yScale(lo, hi), X = (d: string) => ((dms(d) - t0) / (t1 - t0 || 1)) * W;
-  const ticks = niceTicks(lo, hi, 3).filter((v) => v >= lo && v <= hi).map((v) => ({ v, y: Y(v), label: fmt(v) }));
+  let tv = niceTicks(lo, hi, 3);
+  if (step) { let st = step; const mk = () => { const out: number[] = []; for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) out.push(v); return out; }; tv = mk(); while (tv.length > 4) { st *= 2; tv = mk(); } }
+  const ticks = tv.filter((v) => v >= lo && v <= hi).map((v) => ({ v, y: Y(v), label: fmt(v) }));
   const span = Math.max(1, (t1 - t0) / 86400000);
   const barW = Math.max(2, Math.min(14, (300 / span) * 0.6));
   const els: React.ReactNode[] = [];

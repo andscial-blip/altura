@@ -424,7 +424,7 @@ details.data td { font-family: var(--mono); }
 @keyframes skel { to { background-position: -200% 0; } }
 
 /* splash */
-.splash { position: fixed; inset: 0; z-index: 100; background: #FFFFFF; display: grid; place-items: center; transition: opacity .4s ease; }
+.splash { position: fixed; inset: 0; z-index: 3000; background: #FFFFFF; display: grid; place-items: center; transition: opacity .4s ease; }
 .splash.out { opacity: 0; pointer-events: none; }
 .splash .inner { display: flex; flex-direction: column; align-items: center; gap: 18px; color: #2E3D52; }
 .splash .motto { font-size: 1rem; letter-spacing: 0.02em; color: #2F7F6E; opacity: 0; animation: splashIn .8s ease .9s forwards; }

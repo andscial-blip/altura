@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { revalidatePath } from "next/cache";
 import { invalidate } from "@/lib/cache";
 import { q } from "@/lib/db";
@@ -56,10 +57,9 @@ async function delResult(fd: FormData) {
 
 export default async function Page() {
   const today = todayLocal();
-  const [{ est, past, estRace, recAll, rec90, goal, manual, DISTS, nextTest }, last28, done, groups] = await Promise.all([
-    progressData(today), periodActs(addDays(today, -27)), runnaDone(addDays(monday(today), -7 * 4)), routeGroups(),
+  const [{ est, past, estRace, recAll, rec90, goal, manual, DISTS, nextTest }, last28, done] = await Promise.all([
+    progressData(today), periodActs(addDays(today, -27)), runnaDone(addDays(monday(today), -7 * 4)),
   ]);
-  const routeData = groups.length ? await routeRuns(groups.flatMap((g) => g.ids)) : [];
 
   const runs28 = last28.filter((a) => RUN.includes(a.sport));
   const longest = runs28.reduce<(typeof runs28)[number] | null>((b, a) => (!b || a.dist > b.dist ? a : b), null);
@@ -71,20 +71,6 @@ export default async function Page() {
   const gapTxt = (st: NonNullable<typeof goal>["status"]) => st ? (st.onTrack ? `${dur(Math.abs(st.gap))} sotto l'obiettivo` : `+${dur(st.gap)} dall'obiettivo (${int(st.perKm)} s/km)`) : "";
   const label = (k: string) => DISTS.find((d) => d.key === k)!.label;
   const raceBy = new Map(estRace.map((e) => [e.key, e]));
-
-  // percorsi ricorrenti: un riga per gruppo con migliore, ultima e tendenza
-  const byId = new Map(routeData.map((r) => [r.id, r]));
-  const routes = groups.map((g, i) => {
-    const rs = g.ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ ...x, pace: x.time / (x.dist / 1000) }));
-    if (rs.length < 2) return null;
-    rs.sort((a, b) => a.day.localeCompare(b.day));
-    const best = rs.reduce((b, x) => (x.pace < b.pace ? x : b));
-    const last = rs[rs.length - 1];
-    const prev = rs.slice(0, -1).reduce((s, x) => s + x.pace, 0) / (rs.length - 1);
-    const place = rs.map((x) => x.place).filter(Boolean).pop() ?? "Percorso";
-    const distAvg = rs.reduce((s, x) => s + x.dist, 0) / rs.length;
-    return { key: `r${i}`, name: `${place}, ${km(distAvg)} km ${g.dir}`, n: rs.length, best, last, delta: last.pace - prev };
-  }).filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.last.day.localeCompare(a.last.day));
 
   return (
     <div className="stack-l">
@@ -111,7 +97,7 @@ export default async function Page() {
           {seriesPts.length >= 2 ? (
             <div style={{ marginTop: 12 }}>
               <TimeChart label={`Stime sulla ${goal.key === "hm" ? "mezza maratona" : "distanza dell'obiettivo"} nel tempo`} from={seriesPts[0].d} to={today} today={false} invert
-                fmt={(v) => dur(v)} height={150} refLine={goal.target ? { v: goal.target, dash: true } : null}
+                fmt={(v) => dur(v)} step={300} height={150} refLine={goal.target ? { v: goal.target, dash: true } : null}
                 series={[
                   { name: "Recente", color: "var(--run)", kind: "line", gapDays: 40, pts: goal.series },
                   { name: "Da gara", color: "var(--night, #2E3D52)", kind: "line", dash: true, gapDays: 40, pts: goal.raceSeries },
@@ -163,19 +149,9 @@ export default async function Page() {
         </Card>
       </div>
 
-      <Card title="Percorsi ricorrenti" icon="map" aside="stesso tracciato, almeno 2 volte">
-        {routes.length ? (
-          <DataTable caption="Percorsi ricorrenti" initial={{ key: "n", dir: "desc" }} pinned={false}
-            cols={[{ key: "r", label: "Percorso", lead: true, sort: true }, { key: "n", label: "Volte", r: true, sort: true }, { key: "b", label: "Migliore", r: true, sort: true }, { key: "l", label: "Ultima", r: true, sort: true }]}
-            rows={routes.map((r) => ({ key: r.key, cells: {
-              r: { t: r.name, v: r.name, href: `/attivita/${r.last.id}`, sub: `ultima ${day(r.last.day, { day: "numeric", month: "short" })}` },
-              n: { t: String(r.n), v: r.n },
-              b: { t: `${paceS(r.best.pace)} /km`, v: r.best.pace, sub: day(r.best.day, { day: "numeric", month: "short", year: "2-digit" }) },
-              l: { t: `${paceS(r.last.pace)} /km`, v: r.last.pace, sub: Math.abs(r.delta) < 2 ? "come la media" : `${r.delta < 0 ? "−" : "+"}${int(Math.abs(r.delta))} s/km vs media`, cls: r.delta < -2 ? "good" : r.delta > 2 ? "warn" : undefined },
-            } }))} />
-        ) : <Empty inline icon="map" title="Nessun percorso ripetuto" text="Quando corri due volte lo stesso giro (stesso tracciato GPS, distanza entro ±10%) compare qui, con il confronto tra le uscite." />}
-        <p className="note" style={{ marginTop: 8 }}>Tocca un percorso per aprire l&apos;ultima uscita: lì trovi il confronto con tutte le altre volte. &quot;vs media&quot;: passo dell&apos;ultima rispetto alla media delle precedenti (− = più veloce).</p>
-      </Card>
+      <Suspense fallback={<Card title="Percorsi ricorrenti" icon="map" aside="stesso tracciato, almeno 2 volte"><div className="skel" style={{ height: 180 }} aria-label="Caricamento dei percorsi" /></Card>}>
+        <RecurringRoutes />
+      </Suspense>
 
       <Card title="Risultati ufficiali" icon="race" aside="gare e test">
         {manual.length ? (
@@ -214,5 +190,40 @@ export default async function Page() {
         <p className="note" style={{ marginTop: 8 }}>Se quel giorno c&apos;è una corsa con distanza simile (±8%), il risultato si abbina da solo e sostituisce il parziale dell&apos;orologio. Le distanze non classiche (es. 15 km) restano in elenco ma non entrano in record e stime.</p>
       </Card>
     </div>
+  );
+}
+
+/** Percorsi ricorrenti: il calcolo più pesante della pagina, caricato dopo il resto (streaming) così la parte alta compare subito. */
+async function RecurringRoutes() {
+  const groups = await routeGroups();
+  const routeData = groups.length ? await routeRuns([...new Set(groups.flatMap((g) => g.ids))]) : [];
+  // percorsi ricorrenti: un riga per gruppo con migliore, ultima e tendenza
+  const byId = new Map(routeData.map((r) => [r.id, r]));
+  const routes = groups.map((g, i) => {
+    const rs = g.ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ ...x, pace: x.time / (x.dist / 1000) }));
+    if (rs.length < 2) return null;
+    rs.sort((a, b) => a.day.localeCompare(b.day));
+    const best = rs.reduce((b, x) => (x.pace < b.pace ? x : b));
+    const last = rs[rs.length - 1];
+    const prev = rs.slice(0, -1).reduce((s, x) => s + x.pace, 0) / (rs.length - 1);
+    const place = rs.map((x) => x.place).filter(Boolean).pop() ?? "Percorso";
+    const distAvg = rs.reduce((s, x) => s + x.dist, 0) / rs.length;
+    return { key: `r${i}`, name: `${place}, ${km(distAvg)} km ${g.dir}`, n: rs.length, best, last, delta: last.pace - prev };
+  }).filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.last.day.localeCompare(a.last.day));
+
+  return (
+      <Card title="Percorsi ricorrenti" icon="map" aside="stesso tracciato, almeno 2 volte">
+      {routes.length ? (
+        <DataTable caption="Percorsi ricorrenti" initial={{ key: "n", dir: "desc" }} pinned={false}
+          cols={[{ key: "r", label: "Percorso", lead: true, sort: true }, { key: "n", label: "Volte", r: true, sort: true }, { key: "b", label: "Migliore", r: true, sort: true }, { key: "l", label: "Ultima", r: true, sort: true }]}
+          rows={routes.map((r) => ({ key: r.key, cells: {
+            r: { t: r.name, v: r.name, href: `/attivita/${r.last.id}`, sub: `ultima ${day(r.last.day, { day: "numeric", month: "short" })}` },
+            n: { t: String(r.n), v: r.n },
+            b: { t: `${paceS(r.best.pace)} /km`, v: r.best.pace, sub: day(r.best.day, { day: "numeric", month: "short", year: "2-digit" }) },
+            l: { t: `${paceS(r.last.pace)} /km`, v: r.last.pace, sub: Math.abs(r.delta) < 2 ? "come la media" : `${r.delta < 0 ? "−" : "+"}${int(Math.abs(r.delta))} s/km vs media`, cls: r.delta < -2 ? "good" : r.delta > 2 ? "warn" : undefined },
+          } }))} />
+      ) : <Empty inline icon="map" title="Nessun percorso ripetuto" text="Quando corri due volte lo stesso giro (stesso tracciato GPS, distanza entro ±10%) compare qui, con il confronto tra le uscite." />}
+      <p className="note" style={{ marginTop: 8 }}>Tocca un percorso per aprire l&apos;ultima uscita: lì trovi il confronto con tutte le altre volte. &quot;vs media&quot;: passo dell&apos;ultima rispetto alla media delle precedenti (− = più veloce).</p>
+    </Card>
   );
 }

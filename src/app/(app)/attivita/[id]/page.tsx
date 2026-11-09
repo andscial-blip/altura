@@ -214,7 +214,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               <dt className="note">Migliore</dt><dd><Num v={paceS(best.pace)} unit="/km" /> <span className="note">{best.id === a.id ? "questa" : `${day(best.day, { day: "numeric", month: "short", year: "2-digit" })}, ${sgn(me.pace - best.pace)} oggi`}</span></dd>
               <dt className="note">Media del percorso</dt><dd><Num v={paceS(avg)} unit="/km" /> <span className="note">{sgn(me.pace - avg)} oggi</span></dd>
             </dl>
-            <TimeChart label="Passo sullo stesso percorso, uscita per uscita" from={addDays(first, -7)} to={addDays(last, 7)} today={false} invert fmt={(v) => paceS(v)} unit="/km" height={120}
+            <TimeChart label="Passo sullo stesso percorso, uscita per uscita" from={addDays(first, -7)} to={addDays(last, 7)} today={false} invert step={15} fmt={(v) => paceS(v)} unit="/km" height={120}
               series={[
                 { name: "Passo", color, kind: "line", width: 1.5, gapDays: 3650, pts: rows.map((x) => ({ d: x.day, v: Math.round(x.pace) })) },
                 { name: "Altre uscite", color, kind: "dots", width: 6, tip: false, pts: rows.filter((x) => x.id !== a.id).map((x) => ({ d: x.day, v: Math.round(x.pace) })) },
