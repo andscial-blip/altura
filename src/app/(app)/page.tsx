@@ -60,8 +60,8 @@ export default async function Oggi() {
         <div style={{ marginTop: 8 }}><Verdict level={r.level} sub={r.advice}>{r.title}</Verdict></div>
         {syncErr.length > 0 && <ul className="status" aria-label="Stato"><li><i className="warn" aria-hidden="true" />{`Errore da ${syncErr.map((s) => SOURCE_LABEL[s.source]).join(", ")}`}</li></ul>}
         <div className="kpis k3" style={{ marginTop: 14 }}>
-          <Kpi dark label="Variabilità, media 7 notti" icon="hrv" value={hrv7 ? int(hrv7) : "–"} unit="ms" foot={lo && hi ? `tua fascia ${int(lo.value)}–${int(hi.value)}` : "fascia non disponibile"}><Spark values={ser("hrv_night")} /></Kpi>
-          <Kpi dark label="Battito a riposo" icon="heart" value={rhr ? int(rhr.value) : "–"} unit="bpm" foot={rhr?.day === today ? "stamattina" : rhr ? `del ${day(rhr.day, { day: "numeric", month: "short" })}` : "nessun dato"}><Spark values={ser("resting_hr")} /></Kpi>
+          <Kpi dark label="Variabilità" icon="hrv" value={hrv7 ? int(hrv7) : "–"} unit="ms" foot={lo && hi ? `media 7 notti · fascia ${int(lo.value)}–${int(hi.value)}` : "media 7 notti"}><Spark values={ser("hrv_night")} /></Kpi>
+          <Kpi dark label="Battito" icon="heart" value={rhr ? int(rhr.value) : "–"} unit="bpm" foot={rhr?.day === today ? "a riposo, stamattina" : rhr ? `del ${day(rhr.day, { day: "numeric", month: "short" })}` : "nessun dato"}><Spark values={ser("resting_hr")} /></Kpi>
           <Kpi dark label="Sonno" icon="sleep" value={sleep ? hm(sleep.value) : "–"} foot={sleep?.day === today ? "stanotte" : "notte non registrata"}><Spark values={ser("sleep_s")} /></Kpi>
         </div>
         <details className="why">

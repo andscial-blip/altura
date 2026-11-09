@@ -56,11 +56,12 @@ export const tobler = (gPct: number) => 6 * Math.exp(-3.5 * Math.abs(gPct / 100 
 
 const q = (xs: number[], p: number) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); const k = (s.length - 1) * p; const f = Math.floor(k); return s[f] + (s[Math.min(f + 1, s.length - 1)] - s[f]) * (k - f); };
 
-/** Curva personale: velocità orizzontale (km/h) per fascia di pendenza, solo tempo in movimento, tratti da 50 m. */
+/** Curva personale: velocità orizzontale (km/h) per fascia di pendenza, solo tempo in movimento, tratti da circa 200 m. */
 export function speedCurve(tracks: { d: number; a: number; t: number | null }[][], minN = 8): CurvePoint[] {
   const by = new Map<number, number[]>();
-  for (const pts of tracks) for (let i = 1; i < pts.length; i++) {
-    const p = pts[i - 1], c = pts[i];
+  // tratti da ~200 m (4 punti da 50 m): sulla quota del GPS i tratti più corti mescolano il rumore con la pendenza vera
+  for (const pts of tracks) for (let i = 4; i < pts.length; i += 2) {
+    const p = pts[i - 4], c = pts[i];
     if (p.t == null || c.t == null) continue;
     const dd = c.d - p.d, dt = c.t - p.t;
     if (dd <= 0 || dt <= 0) continue;

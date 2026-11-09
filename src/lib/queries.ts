@@ -282,16 +282,25 @@ async function zoneRows_(from: string) {
   return rows.map((r) => ({ day: r.day, z: [r.z1, r.z2, r.z3, r.z4, r.z5].map((v) => Number(v) || 0) }));
 }
 
-/** Curva personale velocità-pendenza da escursioni e trail (tutto lo storico): si restituisce solo la curva, non i tracciati. */
+/**
+ * Montagna da tutto lo storico: curva personale velocità-pendenza e salite lunghe (VAM) di ogni uscita.
+ * I tracciati restano sul server; si restituiscono solo la curva e i numeri per uscita.
+ */
 async function mountainCurve_() {
-  const rows = await q<{ dist: (number | null)[]; alt: (number | null)[]; t: (number | null)[] }>(
-    `select array(select (st.streams->'dist'->>i)::float8 from generate_series(0, st.n_points - 1) i) as dist,
+  const rows = await q<{ id: string; dist: (number | null)[]; alt: (number | null)[]; t: (number | null)[] }>(
+    `select a.id, array(select (st.streams->'dist'->>i)::float8 from generate_series(0, st.n_points - 1) i) as dist,
             array(select (st.streams->'alt'->>i)::float8 from generate_series(0, st.n_points - 1) i) as alt,
             array(select (st.streams->'t'->>i)::float8 from generate_series(0, st.n_points - 1) i) as t
        from sport.activities a join sport.activity_streams st on st.activity_id = a.id
       where not a.hidden and a.sport in ('hike','walk','trail_run') and st.streams ? 'alt' and st.streams ? 'dist' and st.streams ? 't'`);
-  const { byDistance, speedCurve } = await import("@/lib/mountain");
-  return { n: rows.length, curve: speedCurve(rows.map((r) => byDistance(r.dist, r.alt, r.t))) };
+  const { byDistance, speedCurve, climbs } = await import("@/lib/mountain");
+  const tracks = rows.map((r) => ({ id: r.id, pts: byDistance(r.dist, r.alt, r.t) }));
+  const vam: Record<string, { best: number | null; gain: number; n: number }> = {};
+  for (const t of tracks) {
+    const c = climbs(t.pts);
+    vam[t.id] = { best: c.length ? Math.max(...c.map((x) => x.vam)) : null, gain: c.reduce((s, x) => s + x.gain, 0), n: c.length };
+  }
+  return { n: rows.length, curve: speedCurve(tracks.map((t) => t.pts)), vam };
 }
 
 /** Uscite in montagna (escursione, camminata, trail) con dislivello, per l'elenco e la VAM. */

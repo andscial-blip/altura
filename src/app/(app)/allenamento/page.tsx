@@ -54,7 +54,7 @@ export default async function Page() {
   const level = issues.length === 0 ? "verde" : "giallo";
   const title = issues.length === 0
     ? `Settimana in linea: ${dec(runKm, 1)} km fatti${todoKm ? `, ${dec(todoKm, 1)} ancora in programma` : ""}.`
-    : pk?.warn ? `Attenzione al lungo: +${int(pk.pct)}% sulla corsa più lunga del mese.` : all4 && !all4.ok ? `Troppa intensità: ${int(all4.easy * 100)}% del tempo facile (obiettivo circa 80%).` : `${missed.length} ${missed.length === 1 ? "seduta saltata" : "sedute saltate"} questa settimana.`;
+    : pk?.warn ? `Attenzione al lungo: +${int(pk.pct)}% sulla corsa più lunga del mese.` : all4 && !all4.ok ? `Molta intensità: ${int(all4.easy * 100)}% del tempo facile (riferimento circa 80%). Rallenta i facili.` : `${missed.length} ${missed.length === 1 ? "seduta saltata" : "sedute saltate"} questa settimana.`;
 
   return (
     <div className="stack-l">
@@ -97,7 +97,7 @@ export default async function Page() {
           )}
         </Card>
 
-        <Card title="Intensità" icon="heart" aside={<Info title="Facile, medio, duro"><p>Tempo nelle zone di battito misurato da Garmin nelle corse: facile = zone 1–2, medio = zona 3, duro = zone 4–5.</p><p>Per chi prepara una mezza il riferimento è circa l&apos;80% del tempo facile (Seiler 2010). Sotto il 75% si accumula fatica senza migliorare di più. Il caldo alza il battito: in Madagascar parte del «medio» è dovuto alla temperatura.</p></Info>}>
+        <Card title="Intensità" icon="heart" aside={<Info title="Facile, medio, duro"><p>Tempo nelle zone di battito Garmin, che di base sono calcolate sulla FC massima: facile = zone 1–3 (sotto circa l&apos;80% della massima, dove sta la soglia aerobica della maggior parte degli amatori), medio = zona 4, duro = zona 5.</p><p>Per chi prepara una mezza il riferimento è circa l&apos;80% del tempo facile (Seiler 2010). Il caldo alza il battito a parità di passo: in Madagascar parte del «medio» è dovuto alla temperatura, e la soluzione è rallentare i facili, non ignorarli.</p></Info>}>
           {all4 ? (
             <>
               <p style={{ fontWeight: 600 }}>{int(all4.easy * 100)}% facile nelle ultime 4 settimane: {all4.verdict}.</p>

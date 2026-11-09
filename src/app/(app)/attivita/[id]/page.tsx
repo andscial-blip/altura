@@ -9,7 +9,8 @@ import { compare, type Step } from "@/lib/runna-parse";
 import { isNum, rolling, splitsFromStreams, type Split } from "@/lib/stats";
 import { Profiles, TimeChart, Zones } from "@/components/charts";
 import { addDays } from "@/lib/dates";
-import { Card, Head, Kpi, Num } from "@/components/Head";
+import { Card, Head, Info, Kpi, Num } from "@/components/Head";
+import { byDistance, climbs, gradeClass, kmEffort } from "@/lib/mountain";
 import { DataTable } from "@/components/DataTable";
 import { SPORT_COLOR, StructBar } from "@/components/Act";
 import { Icon, SportIcon, sportMeta } from "@/components/Icon";
@@ -86,6 +87,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const routeIds = isRun && track.length ? await sameRouteIds(a.id) : [];
   const route = routeIds.length ? await routeRuns(routeIds) : [];
   const sim = !route.length && dist > 0 ? await similar(a.id, a.sport, dist) : [];
+
+  // montagna: km-sforzo, salite lunghe (VAM) e pendenza ogni 100 m per escursioni, camminate e trail
+  const mnt = ["hike", "walk", "trail_run"].includes(a.sport) && s.dist && s.alt ? (() => {
+    const pts = byDistance(s.dist, s.alt, s.t ?? null);
+    const c = climbs(pts);
+    const strip: number[] = [];
+    for (let i = 2; i < pts.length; i += 2) strip.push((pts[i].a - pts[i - 2].a) / Math.max(1, pts[i].d - pts[i - 2].d));
+    return { effort: kmEffort(dist, Number(a.elev_gain_m ?? 0)), climbs: c, best: c.length ? c.reduce((b, x) => (x.vam > b.vam ? x : b)) : null, strip };
+  })() : null;
   const myPace = dist && t ? t / (dist / 1000) : null;
 
   const tech: [string, string][] = [];
@@ -138,6 +148,29 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <p className="note">Passo: media mobile su 5 punti, asse invertito (più in alto = più veloce). Valori estremi dell&apos;1% esclusi dalla scala. Fonte: {streams?.source ? SOURCE_LABEL[streams.source] : "–"}.</p>
         </Card>
       ) : null}
+
+      {mnt && (
+        <Card title="Salite e pendenze" icon="gain" aside={<Info title="Km-sforzo, VAM, pendenze"><p>Km-sforzo = km + dislivello positivo / 100 (ITRA). VAM = metri di dislivello all&apos;ora sulle salite lunghe (almeno 150 m e 8%), dal tempo registrato. La striscia mostra la pendenza ogni 100 m: verdi le salite, viola le discese, più scuro = più ripido.</p></Info>}>
+          <div className="kpis k3">
+            <Kpi label="Km-sforzo" icon="mountain" value={dec(mnt.effort, 1)} foot={`${km(dist)} km + ${int(a.elev_gain_m ?? 0)} m D+`} />
+            <Kpi label="Miglior VAM" icon="gain" value={mnt.best ? int(mnt.best.vam) : "–"} unit={mnt.best ? "m/h" : undefined} foot={mnt.best ? `salita di ${int(mnt.best.gain)} m al ${int(mnt.best.grade * 100)}%` : "nessuna salita lunga"} />
+            <Kpi label="Salite lunghe" icon="hike" value={String(mnt.climbs.length)} foot={mnt.climbs.length ? `${int(mnt.climbs.reduce((z, c) => z + c.gain, 0))} m in salita` : "sotto 150 m o 8%"} />
+          </div>
+          {mnt.strip.length > 3 && (
+            <div className="gstrip" role="img" aria-label="Pendenza lungo il percorso, ogni 100 metri" style={{ marginTop: 12 }}>
+              {mnt.strip.map((g, i) => <i key={i} className={gradeClass(g)} title={`${int(g * 100)}%`} />)}
+            </div>
+          )}
+          {mnt.climbs.length > 0 && (
+            <DataTable caption="Salite lunghe" pinned={false}
+              cols={[{ key: "k", label: "Salita", lead: true }, { key: "g", label: "Dislivello", r: true }, { key: "p", label: "Pendenza", r: true }, { key: "v", label: "VAM", r: true }]}
+              rows={mnt.climbs.map((c, i) => ({ key: String(i), cells: {
+                k: { t: `Dal km ${dec(c.fromM / 1000, 1)} al ${dec(c.toM / 1000, 1)}`, sub: dur(c.secs) },
+                g: { t: `${int(c.gain)} m`, v: c.gain }, p: { t: `${int(c.grade * 100)}%`, v: c.grade }, v: { t: `${int(c.vam)} m/h`, v: c.vam },
+              } }))} />
+          )}
+        </Card>
+      )}
 
       <div className={`grid${full.length > 1 && zones.some((z) => z > 0) ? " g2" : ""}`}>
         {full.length > 1 && (

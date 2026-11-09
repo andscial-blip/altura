@@ -10,7 +10,7 @@ const FEEL = [{ v: 1, t: "Molto stanco" }, { v: 2, t: "Stanco" }, { v: 3, t: "No
 export function CheckIn({ feel, context, available }: { feel: number | null; context: Context[]; available: boolean }) {
   if (!available) return null;
   return (
-    <form action={saveCheckin} className="checkin" aria-label="Come ti senti stamattina">
+    <form action={saveCheckin} className="checkin" aria-label="Come ti senti stamattina" autoComplete="off">
       <p className="ck-q">{feel ? <>Stamattina: <b>{FEEL[feel - 1].t.toLowerCase()}</b> ({feel}/5). Puoi cambiarlo.</> : "Come ti senti stamattina?"}</p>
       <div className="ck-feel" role="group" aria-label="Da 1 (molto stanco) a 5 (benissimo)">
         {FEEL.map((f) => <button key={f.v} type="submit" name="feel" value={f.v} aria-pressed={feel === f.v} title={f.t}><b>{f.v}</b><span>{f.t}</span></button>)}

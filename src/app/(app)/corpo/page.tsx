@@ -65,7 +65,7 @@ export default async function Page() {
 
         <Card title="Sonno" icon="sleep" aside={<Info title="Sonno"><p>Conta la durata, non le fasi: gli orologi le stimano male (Garmin sovrastima il sonno di circa 38 minuti in uno studio con polisonnografia).</p><p>Riferimenti: almeno 7 ore a notte per un adulto che si allena (AASM); sotto le 6 ore la notte vale come segnale.</p></Info>}>
           <p style={{ fontWeight: 600 }}>{sleepWeekAvg ? `Media dell'ultima settimana ${hm(sleepWeekAvg * 3600)}${sleepWeekAvg < 7 ? ": sotto le 7 ore, il sonno è la priorità." : ": nella norma."}` : "Poche notti registrate."}</p>
-          <TimeChart label="Ore di sonno, ultime 60 notti" from={days[0]} to={today} fmt={(v) => (v ? hm(v * 3600) : "–")} height={120} refLine={{ v: 7, dash: true }}
+          <TimeChart label="Ore di sonno, ultime 60 notti" from={days[0]} to={today} fmt={(v) => (v ? hm(v * 3600) : "–")} step={1} height={120} refLine={{ v: 7, dash: true }}
             series={[{ name: "Notte", color: "var(--swim)", kind: "bars", pts: days.map((d, i) => ({ d, v: sl[i] })) }, { name: "Media 7 notti", color: "var(--ink)", kind: "line", pts: days.map((d, i) => ({ d, v: sl7[i] })) }]} />
           <Legend items={[{ label: "Notte", color: "var(--swim)" }, { label: "Media 7 notti", color: "var(--ink)", line: true }, { label: "7 ore", color: "var(--faint)", dash: true }]} />
         </Card>

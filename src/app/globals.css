@@ -532,3 +532,8 @@ details.more[open] > summary svg { transform: rotate(90deg); }
 .band-dark details.why .signals .val { color: var(--on-night-2); }
 .band-dark details.why .note { color: var(--on-night-2); margin-top: 8px; }
 .band-dark details.why .note a { color: var(--on-night); }
+.gstrip { display: flex; height: 16px; border-radius: 6px; overflow: hidden; }
+.gstrip i { flex: 1 1 0; min-width: 1px; }
+.gstrip .piano { background: var(--surface-2); }
+.gstrip .su1 { background: #CFE7E1; } .gstrip .su2 { background: #7CC3B2; } .gstrip .su3 { background: #2F7F6E; }
+.gstrip .giu1 { background: #E6E0F3; } .gstrip .giu2 { background: #B9A9DE; } .gstrip .giu3 { background: #7A5FB8; }

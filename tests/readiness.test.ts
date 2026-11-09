@@ -72,8 +72,11 @@ describe("stima di gara unica", () => {
 describe("allenamento", () => {
   it("intensità 80/20", () => {
     const r = intensity([{ day: T, z: [600, 3000, 300, 300, 0] }])!;
-    expect(Math.round(r.easy * 100)).toBe(86);
+    expect(Math.round(r.easy * 100)).toBe(93);   // Z1–Z3 = facile
     expect(r.ok).toBe(true);
+    const hot = intensity([{ day: T, z: [0, 70, 350, 240, 60] }])!;   // le ultime 4 settimane reali: molto Z4
+    expect(Math.round(hot.easy * 100)).toBe(58);
+    expect(hot.ok).toBe(false);
     expect(intensity([{ day: T, z: [100, 100, 100, 0, 0] }])).toBeNull();
   });
   it("picco oltre il 10%", () => {
