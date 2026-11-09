@@ -49,12 +49,13 @@ function dateTicks(t0: number, t1: number, n = 3) {
   return out;
 }
 
-export type Series = { name: string; pts: { d: string; v: number | null }[]; kind?: "line" | "area" | "dots" | "bars"; color: string; width?: number; dash?: boolean; gapDays?: number };
+export type Series = { name: string; pts: { d: string; v: number | null }[]; kind?: "line" | "area" | "dots" | "bars"; color: string; width?: number; dash?: boolean; gapDays?: number; tip?: boolean };
 
 /** Serie temporali su asse del tempo reale, con fascia di riferimento, linea di riferimento e punto di oggi. */
-export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain, zoomHref }: {
+export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain, zoomHref, invert = false }: {
   series: Series[]; from: string; to: string; band?: { lo: number; hi: number } | null; refLine?: { v: number; dash?: boolean } | null;
   fmt: (v: number) => string; unit?: string; height?: number; label: string; maxGapDays?: number; today?: boolean; domain?: [number, number]; zoomHref?: string;
+  /** asse rovesciato: valori bassi in alto (passo, tempi: più in alto = più veloce) */ invert?: boolean;
 }) {
   const t0 = dms(from), t1 = dms(to);
   const all = series.flatMap((s) => s.pts.map((p) => p.v)).filter(isNum);
@@ -62,12 +63,12 @@ export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", hei
   let lo = domain?.[0] ?? Math.min(...all, band?.lo ?? Infinity, refLine?.v ?? Infinity);
   let hi = domain?.[1] ?? Math.max(...all, band?.hi ?? -Infinity, refLine?.v ?? -Infinity);
   if (!domain) { const p = (hi - lo) * 0.08 || 1; lo -= p; hi += p; if (series.some((s) => s.kind === "bars")) lo = Math.min(0, lo); }
-  const Y = yScale(lo, hi), X = (d: string) => ((dms(d) - t0) / (t1 - t0 || 1)) * W;
+  const Y = invert ? yScale(hi, lo) : yScale(lo, hi), X = (d: string) => ((dms(d) - t0) / (t1 - t0 || 1)) * W;
   const ticks = niceTicks(lo, hi, 3).filter((v) => v >= lo && v <= hi).map((v) => ({ v, y: Y(v), label: fmt(v) }));
   const span = Math.max(1, (t1 - t0) / 86400000);
   const barW = Math.max(2, Math.min(14, (300 / span) * 0.6));
   const els: React.ReactNode[] = [];
-  if (band) els.push(<rect key="band" x="0" width={W} y={f1(Y(band.hi))} height={f1(Math.max(0, Y(band.lo) - Y(band.hi)))} fill="var(--band)" />);
+  if (band) els.push(<rect key="band" x="0" width={W} y={f1(Math.min(Y(band.hi), Y(band.lo)))} height={f1(Math.abs(Y(band.lo) - Y(band.hi)))} fill="var(--band)" />);
   if (refLine) els.push(<path key="ref" d={`M0 ${f1(Y(refLine.v))}H${W}`} stroke="var(--faint)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />);
   series.forEach((s, si) => {
     const pts = s.pts.filter((p) => isNum(p.v) && dms(p.d) >= t0 - 43200000 && dms(p.d) <= t1 + 43200000) as { d: string; v: number }[];
@@ -97,7 +98,7 @@ export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", hei
   const days = [...new Set(series.flatMap((s) => s.pts.filter((p) => isNum(p.v)).map((p) => p.d)))].sort();
   const tips: TipRow[] = days.map((d) => ({
     x: (dms(d) - t0) / (t1 - t0 || 1), d,
-    lines: [day(d, { weekday: "short", day: "numeric", month: "short" }), ...series.map((s) => { const p = s.pts.find((q) => q.d === d); return p && isNum(p.v) ? `${series.length > 1 ? s.name + " " : ""}${fmt(p.v)}${unit ? " " + unit : ""}` : null; }).filter((x): x is string => !!x)],
+    lines: [day(d, { weekday: "short", day: "numeric", month: "short" }), ...series.filter((s) => s.tip !== false).map((s) => { const p = s.pts.find((q) => q.d === d); return p && isNum(p.v) ? `${series.filter((x) => x.tip !== false).length > 1 ? s.name + " " : ""}${fmt(p.v)}${unit ? " " + unit : ""}` : null; }).filter((x): x is string => !!x)],
   }));
   return <Frame height={height} yTicks={ticks} xTicks={dateTicks(t0, t1)} tips={tips} label={label} zoomHref={zoomHref}>{els}</Frame>;
 }

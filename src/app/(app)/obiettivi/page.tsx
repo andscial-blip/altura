@@ -1,9 +1,10 @@
+import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { invalidate } from "@/lib/cache";
 import { q } from "@/lib/db";
 import { day, dec, dur, km, todayLocal } from "@/lib/fmt";
-import { runBests } from "@/lib/queries";
-import { isNum, riegel } from "@/lib/stats";
+import { progressData } from "@/lib/progress-server";
+import { riegel } from "@/lib/stats";
 import { Card, Empty, Head } from "@/components/Head";
 import { Icon } from "@/components/Icon";
 
@@ -39,10 +40,10 @@ export default async function Page() {
     `select coalesce(sum(distance_m) filter (where sport in ('run','trail_run','treadmill')),0)/1000/4 as km, coalesce(sum(elev_gain_m),0)/4 as gain
        from sport.activities where not hidden and start_utc > now() - interval '28 days'`);
   const today = todayLocal();
-  const bests = await runBests(90);
-  const b10 = bests.filter((b) => isNum(b.s10)).sort((a, b) => a.s10! - b.s10!)[0];
-  const b5 = bests.filter((b) => isNum(b.s5)).sort((a, b) => a.s5! - b.s5!)[0];
-  const base = b10 ? { t: b10.s10!, d: 10000, label: "10 km" } : b5 ? { t: b5.s5!, d: 5000, label: "5 km" } : null;
+  const prog = await progressData(today);
+  // stima per qualunque distanza: lo sforzo da 5 km in su degli ultimi 90 giorni che dà il tempo più veloce (come in Progressi)
+  const pool = prog.list.filter((e) => e.m >= 5000 && e.day >= prog.from);
+  const predict = (m: number) => pool.length ? Math.min(...pool.map((e) => riegel(e.s, e.m, m))) : null;
   return (
     <div className="stack-l">
       <Head icon="target" title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
@@ -58,7 +59,7 @@ export default async function Page() {
             const range = t.time_min_s && t.time_max_s && t.time_min_s !== t.time_max_s;
             const pc = t.pace_min_s && t.pace_max_s ? (t.pace_min_s === t.pace_max_s ? `${dur(t.pace_min_s)} /km` : `${dur(t.pace_min_s)}–${dur(t.pace_max_s)} /km`) : t.dist_m && t.time_s ? `${dur(t.time_s / (t.dist_m / 1000))} /km` : null;
             line = `${t.dist_m ? `${km(t.dist_m)} km` : ""}${range ? ` in ${dur(t.time_min_s!)}–${dur(t.time_max_s!)}` : t.time_s ? ` in ${dur(t.time_s)}` : ""}${pc ? `, ritmo ${pc}` : ""}`;
-            if (base && t.dist_m) pred = riegel(base.t, base.d, t.dist_m);
+            if (t.dist_m) pred = predict(t.dist_m);
           }
           const race = (g.kind === "gara" || g.kind === "test") && g.active && daysLeft !== null && daysLeft >= 0;
           return (
@@ -71,7 +72,7 @@ export default async function Page() {
                 {race && <div className="count">{daysLeft}<small>giorni</small></div>}
               </div>
               <p style={{ marginTop: 8 }}>{line}</p>
-              {pred && <p className="note">Previsione oggi: <b className="mono">{dur(pred)}</b> (Riegel dal miglior {base!.label} degli ultimi 90 giorni){t.time_s ? `, ${pred <= t.time_s ? "dentro" : "oltre"} l'obiettivo di ${dur(Math.abs(pred - t.time_s))}` : ""}.</p>}
+              {pred && <p className="note">Stima di oggi: <b className="mono">{dur(pred)}</b> (Riegel dal miglior sforzo da 5 km in su degli ultimi 90 giorni){t.time_s ? `, ${pred <= t.time_s ? "dentro" : "oltre"} l'obiettivo di ${dur(Math.abs(pred - t.time_s))}` : ""}.</p>}
               <div className="row between" style={{ marginTop: 10 }}>
                 <span className="note">{g.target_date ? day(g.target_date, { day: "numeric", month: "long", year: "numeric" }) : "senza data"}</span>
                 <form action={toggle}><input type="hidden" name="id" value={g.id} /><button className="btn sm">{g.active ? "Archivia" : "Riattiva"}</button></form>
@@ -91,7 +92,7 @@ export default async function Page() {
           <button className="btn primary" type="submit">Aggiungi obiettivo</button>
         </form>
       </Card>
-      <p className="note">Previsione: formula di Riegel (tempo × (distanza obiettivo / distanza)^1,06) sul parziale più veloce misurato da Garmin. Presuppone una preparazione specifica sulla distanza.</p>
+      <p className="note">Stima: formula di Riegel (tempo × (distanza obiettivo / distanza)^1,06) sullo sforzo più veloce da 5 km in su degli ultimi 90 giorni, dai parziali Garmin o dai risultati ufficiali inseriti in <Link href="/progressi">Progressi</Link>. Presuppone una preparazione specifica sulla distanza.</p>
     </div>
   );
 }

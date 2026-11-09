@@ -15,6 +15,7 @@ const MAIN = [
   { href: "/piano", label: "Piano", icon: "calendar" },
 ];
 const MORE = [
+  { href: "/progressi", label: "Progressi", icon: "trend" },
   { href: "/mappa", label: "Mappa", icon: "map" },
   { href: "/obiettivi", label: "Obiettivi", icon: "target" },
 ];
@@ -55,8 +56,8 @@ export function Nav() {
       </nav>
       <nav className="tabbar" aria-label="Sezioni principali">
         {MAIN.map((i) => {
-          // Mappa vive sotto Attività, Obiettivi sotto Piano: la scheda resta accesa
-          const on = cur(i.href) || (i.href === "/attivita" && p.startsWith("/mappa")) || (i.href === "/piano" && p.startsWith("/obiettivi")) ? "page" : undefined;
+          // Mappa vive sotto Attività, Progressi sotto Analisi, Obiettivi sotto Piano: la scheda resta accesa
+          const on = cur(i.href) || (i.href === "/attivita" && p.startsWith("/mappa")) || (i.href === "/analisi" && p.startsWith("/progressi")) || (i.href === "/piano" && p.startsWith("/obiettivi")) ? "page" : undefined;
           return <Link key={i.href} href={i.href} prefetch={true} aria-current={on}><Icon name={i.icon} size={22} />{i.label}</Link>;
         })}
       </nav>

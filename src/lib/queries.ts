@@ -187,6 +187,77 @@ async function runnaDone_(from: string) {
       where not a.hidden and ${LOCAL} >= $1::date order by a.start_utc`, [from]);
 }
 
+/** Parziali più veloci di Garmin per ogni corsa (tutto lo storico): base di record e stime. */
+async function splitRows_() {
+  return q<{ id: string; day: string; name: string | null; s1: number | null; s1609: number | null; s5: number | null; s10: number | null; s21: number | null; race: boolean }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name,
+            (coalesce(s.raw->'summary'->'eventType'->>'typeKey', '') = 'race'
+              or exists (select 1 from sport.activity_sources r where r.activity_id = a.id and r.source = 'runna' and r.raw->>'type' in ('gara','test'))) as race,
+            (s.raw->'summary'->>'fastestSplit_1000')::float8 as s1, (s.raw->'summary'->>'fastestSplit_1609')::float8 as s1609,
+            (s.raw->'summary'->>'fastestSplit_5000')::float8 as s5, (s.raw->'summary'->>'fastestSplit_10000')::float8 as s10,
+            (s.raw->'summary'->>'fastestSplit_21098')::float8 as s21
+       from sport.activities a join sport.activity_sources s on s.activity_id = a.id and s.source = 'garmin'
+      where not a.hidden and a.sport in ('run','trail_run','treadmill') and (s.raw->'summary' ? 'fastestSplit_1000')
+      order by a.start_utc`);
+}
+
+/** Risultati inseriti a mano (tempi ufficiali). */
+async function results_() {
+  // la tabella arriva con db/004: se non è ancora stata creata, nessun risultato (il resto di Progressi funziona lo stesso)
+  return q<{ id: string; day: string; name: string; kind: string; dist_m: number; time_s: number; activity_id: string | null; note: string | null }>(
+    `select id, to_char(day,'YYYY-MM-DD') as day, name, kind, dist_m::float8 as dist_m, time_s::float8 as time_s, activity_id::text as activity_id, note
+       from sport.results order by day desc`).catch((e: unknown) => {
+    if (String((e as { code?: string })?.code) === "42P01") return [];
+    throw e;
+  });
+}
+
+/**
+ * Percorsi ricorrenti: tracciati di tutte le corse con GPS (150 punti ciascuno), raggruppati per forma e distanza.
+ * Il confronto avviene sul server con i tracciati completi; al browser arrivano solo gli identificativi dei gruppi.
+ */
+async function routeGroups_() {
+  const rows = await q<{ id: string; dist: number; lat: (number | null)[]; lon: (number | null)[] }>(
+    `select a.id, a.distance_m::float8 as dist,
+            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lat,
+            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lon
+       from sport.activities a join sport.activity_streams t on t.activity_id = a.id
+      where not a.hidden and a.sport in ('run','trail_run') and t.start_lat is not null and a.distance_m > 1000
+      order by a.start_utc desc`);
+  const { prepare, groups } = await import("@/lib/routes");
+  const prep = prepare(rows.map((r) => ({ id: r.id, dist: r.dist, track: { lat: r.lat.map((v) => v ?? NaN), lon: r.lon.map((v) => v ?? NaN) } })));
+  return groups(prep, 2);
+}
+
+/** Corse sullo stesso percorso di una data: candidati con partenza entro ~1,5 km e distanza ±10%, poi confronto della forma del tracciato. */
+async function sameRouteIds_(id: string) {
+  const rows = await q<{ id: string; dist: number; lat: (number | null)[]; lon: (number | null)[] }>(
+    `with me as (select a.distance_m, t.start_lat, t.start_lon from sport.activities a join sport.activity_streams t on t.activity_id = a.id where a.id = $1 and t.start_lat is not null)
+     select a.id, a.distance_m::float8 as dist,
+            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lat,
+            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lon
+       from sport.activities a join sport.activity_streams t on t.activity_id = a.id, me
+      where not a.hidden and a.sport in ('run','trail_run') and t.start_lat is not null
+        and abs(t.start_lat - me.start_lat) < 0.014 and abs(t.start_lon - me.start_lon) < 0.014
+        and a.distance_m between me.distance_m * 0.9 and me.distance_m * 1.1`, [id]);
+  if (rows.length < 2) return [];
+  const { prepare, matches } = await import("@/lib/routes");
+  const prep = prepare(rows.map((r) => ({ id: r.id, dist: r.dist, track: { lat: r.lat.map((v) => v ?? NaN), lon: r.lon.map((v) => v ?? NaN) } })));
+  const m = matches(id, prep);
+  return m.length >= 2 ? m : [];
+}
+
+/** Dati di confronto per un insieme di corse (stesso percorso). */
+async function routeRuns_(ids: string[]) {
+  if (!ids.length) return [];
+  return q<{ id: string; day: string; name: string | null; dist: number; time: number; hr: number | null; gain: number | null; place: string | null; temp: number | null }>(
+    `select a.id, to_char(${LOCAL},'YYYY-MM-DD') as day, a.name, a.distance_m::float8 as dist, coalesce(a.moving_s, a.elapsed_s)::float8 as time,
+            a.avg_hr::float8 as hr, a.elev_gain_m::float8 as gain,
+            (select x.raw->'summary'->>'locationName' from sport.activity_sources x where x.activity_id = a.id and x.source = 'garmin') as place,
+            (select (x.raw->'summary'->>'averageTemperature')::float8 from sport.activity_sources x where x.activity_id = a.id and x.source = 'garmin') as temp
+       from sport.activities a where a.id = any($1::uuid[]) and coalesce(a.moving_s, a.elapsed_s) > 0 order by a.start_utc`, [ids]);
+}
+
 async function sportsPresent_() {
   return (await q<{ sport: string }>("select distinct sport from sport.activities where not hidden")).map((r) => r.sport);
 }
@@ -210,3 +281,8 @@ export const similar = cached("similar", similar_);
 export const periodActs = cached("periodActs", periodActs_);
 export const runnaDone = cached("runnaDone", runnaDone_);
 export const sportsPresent = cached("sportsPresent", sportsPresent_);
+export const splitRows = cached("splitRows", splitRows_);
+export const results = cached("results", results_);
+export const routeGroups = cached("routeGroups", routeGroups_, 3600);
+export const routeRuns = cached("routeRuns", routeRuns_);
+export const sameRouteIds = cached("sameRouteIds", sameRouteIds_);

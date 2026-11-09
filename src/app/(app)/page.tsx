@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { activities, dailyLoad, dailyMulti, goals, lastSyncs, periodActs, planned, runBests } from "@/lib/queries";
+import { activities, dailyLoad, dailyMulti, goals, lastSyncs, periodActs, planned } from "@/lib/queries";
+import { progressData } from "@/lib/progress-server";
 import { thumbs } from "@/lib/track";
 import { acwr, acwrZone } from "@/lib/analytics";
-import { isNum, mean, riegel, rolling, validDaily } from "@/lib/stats";
+import { isNum, mean, rolling, validDaily } from "@/lib/stats";
 import { todaySummary } from "@/lib/today";
 import { addDays, daysBetween, monday, range } from "@/lib/dates";
 import { ago, day, dec, dur, hm, int, km, SOURCE_LABEL, todayLocal } from "@/lib/fmt";
@@ -20,8 +21,8 @@ const M = ["hrv_night", "hrv_baseline_low", "hrv_baseline_high", "resting_hr", "
 
 export default async function Oggi() {
   const today = todayLocal();
-  const [dm, load, plan, gl, recent, syncs, week, bests, monWeek] = await Promise.all([
-    dailyMulti(M, 40), dailyLoad(60), planned(today, addDays(today, 200)), goals(true), activities({ limit: 4 }), lastSyncs(), periodActs(addDays(today, -6)), runBests(90), periodActs(monday(today)),
+  const [dm, load, plan, gl, recent, syncs, week, prog, monWeek] = await Promise.all([
+    dailyMulti(M, 40), dailyLoad(60), planned(today, addDays(today, 200)), goals(true), activities({ limit: 4 }), lastSyncs(), periodActs(addDays(today, -6)), progressData(today), periodActs(monday(today)),
   ]);
   const th = await thumbs(recent.map((a) => a.id));
 
@@ -44,10 +45,8 @@ export default async function Oggi() {
   const daysTo = race?.target_date ? daysBetween(today, race.target_date) : null;
   const planWeeks = Math.max(0, ...plan.map((p) => p.week ?? 0));
   const curWeek = plan.find((p) => p.day >= today)?.week ?? null;
-  const b10 = bests.filter((b) => isNum(b.s10)).sort((a, b) => a.s10! - b.s10!)[0];
-  const b5 = bests.filter((b) => isNum(b.s5)).sort((a, b) => a.s5! - b.s5!)[0];
-  const base = b10 ? { t: b10.s10!, d: 10000, label: "10 km" } : b5 ? { t: b5.s5!, d: 5000, label: "5 km" } : null;
-  const pred = base && race?.target.dist_m ? riegel(base.t, base.d, race.target.dist_m) : null;
+  // stime e obiettivo: stesso calcolo della pagina Progressi (lib/progress)
+  const g = prog.goal && race && prog.goal.id === race.id ? prog.goal : null;
 
   const sum = todaySummary({
     today, hrv, hrvLo: lo?.value ?? null, hrvHi: hi?.value ?? null, rhr, rhrMean7: before7("resting_hr"), sleep, sleepMean7: before7("sleep_s"),
@@ -141,14 +140,23 @@ export default async function Oggi() {
               </div>
               <dl className="kv" style={{ marginTop: 10 }}>
                 {(race.target.time_s || race.target.time_min_s) && <><dt className="note">Obiettivo Runna</dt><dd><Num v={race.target.time_min_s && race.target.time_max_s && race.target.time_min_s !== race.target.time_max_s ? `${dur(race.target.time_min_s)}–${dur(race.target.time_max_s)}` : dur(race.target.time_s)} /></dd></>}
-                {pred && base && <><dt className="note">Previsione oggi (dal miglior {base.label})</dt><dd><Num v={dur(pred)} /></dd></>}
+                {g?.raceEstimate && <><dt className="note">Stima da gara, 12 mesi</dt><dd><Num v={dur(g.raceEstimate)} /> {g.raceStatus && <span className={`badge ${g.raceStatus.onTrack ? "ok" : "warn"}`}>{g.raceStatus.onTrack ? "−" : "+"}{dur(Math.abs(g.raceStatus.gap))}</span>}</dd></>}
+                {g?.estimate && <><dt className="note">Stima recente, 90 giorni</dt><dd><Num v={dur(g.estimate)} /> {g.status && <span className={`badge ${g.status.onTrack ? "ok" : "warn"}`}>{g.status.onTrack ? "−" : "+"}{dur(Math.abs(g.status.gap))}</span>}</dd></>}
               </dl>
+              {prog.est.length > 0 && (
+                <>
+                <p className="note" style={{ marginTop: 10 }}>Tempi stimati, ultimi 90 giorni</p>
+                <div className="estgrid" style={{ marginTop: 6 }} aria-label="Tempi stimati dagli sforzi degli ultimi 90 giorni">
+                  {prog.est.map((e) => <div key={e.key} className={g?.key === e.key ? "on" : undefined}><span className="note">{e.key === "hm" ? "Mezza" : e.key === "m" ? "Maratona" : e.key === "5k" ? "5 km" : "10 km"}</span><Num v={dur(e.s)} /></div>)}
+                </div>
+                </>
+              )}
               {planWeeks > 0 && curWeek && (
                 <>
                   <div className="goalbar" role="img" style={{ gridTemplateColumns: `repeat(${planWeeks}, minmax(0, 1fr))` }} aria-label={`Settimana ${curWeek} di ${planWeeks} del piano`}>
                     {Array.from({ length: planWeeks }, (_, i) => <i key={i} className={i + 1 < curWeek ? "d" : i + 1 === curWeek ? "now" : undefined} />)}
                   </div>
-                  <div className="row between note" style={{ marginTop: 6 }}><span>Settimana {curWeek} di {planWeeks}</span><Link href="/obiettivi">Obiettivi</Link></div>
+                  <div className="row between note" style={{ marginTop: 6 }}><span>Settimana {curWeek} di {planWeeks}</span><Link href="/progressi">Progressi</Link></div>
                 </>
               )}
             </section>
@@ -214,7 +222,7 @@ export default async function Oggi() {
                   </div>
                 );
               })}
-              <p className="note">Previsione gara: formula di Riegel (tempo × (distanza obiettivo / distanza)^1,06) sul parziale più veloce misurato da Garmin negli ultimi 90 giorni. Presuppone una preparazione specifica: è un riferimento, non una promessa.</p>
+              <p className="note">Stime dei tempi: formula di Riegel (tempo × (distanza / distanza dello sforzo)^1,06) sullo sforzo più veloce da 5 km in su degli ultimi 90 giorni (parziali Garmin o risultati ufficiali inseriti in Progressi). È un riferimento, non una promessa.</p>
             </div>
           </details>
         </div>

@@ -1,14 +1,15 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { activity, similar } from "@/lib/queries";
+import { activity, routeRuns, sameRouteIds, similar } from "@/lib/queries";
 import { publicTrack } from "@/lib/track";
-import { dec, dur, hm, int, km, pace, paceS, sportLabel, when, SOURCE_LABEL } from "@/lib/fmt";
+import { day, dec, dur, hm, int, km, pace, paceS, sportLabel, when, SOURCE_LABEL } from "@/lib/fmt";
 import { ACTIVITY_FIELDS, mergeNorms, type Norm, type SourceId } from "@/lib/model";
 import { compare, type Step } from "@/lib/runna-parse";
 import { isNum, rolling, splitsFromStreams, type Split } from "@/lib/stats";
-import { Profiles, Zones } from "@/components/charts";
-import { Card, Head, Kpi } from "@/components/Head";
+import { Profiles, TimeChart, Zones } from "@/components/charts";
+import { addDays } from "@/lib/dates";
+import { Card, Head, Kpi, Num } from "@/components/Head";
 import { DataTable } from "@/components/DataTable";
 import { SPORT_COLOR, StructBar } from "@/components/Act";
 import { Icon, SportIcon, sportMeta } from "@/components/Icon";
@@ -63,7 +64,10 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
   // profili: passo (media mobile su 5 punti), battito, quota
   const paceSer = s.v ? rolling(s.v.map((v) => (isNum(v) && v > 0.5 ? 1000 / v : null)), 5, 3) : [];
-  const sim = dist > 0 ? await similar(a.id, a.sport, dist) : [];
+  // stesso percorso (forma del tracciato): se c'è, sostituisce le "uscite simili" per distanza
+  const routeIds = isRun && track.length ? await sameRouteIds(a.id) : [];
+  const route = routeIds.length ? await routeRuns(routeIds) : [];
+  const sim = !route.length && dist > 0 ? await similar(a.id, a.sport, dist) : [];
   const myPace = dist && t ? t / (dist / 1000) : null;
 
   const tech: [string, string][] = [];
@@ -193,6 +197,43 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </div>
         </Card>
       )}
+
+      {route.length > 1 && (() => {
+        const rows = route.map((x) => ({ ...x, pace: x.time / (x.dist / 1000), eff: x.hr ? x.dist / ((x.time / 60) * x.hr) : null }));
+        const me = rows.find((x) => x.id === a.id)!;
+        const byPace = [...rows].sort((p, q) => p.pace - q.pace);
+        const rank = byPace.findIndex((x) => x.id === a.id) + 1;
+        const best = byPace[0], avg = rows.reduce((z, x) => z + x.pace, 0) / rows.length;
+        const sgn = (v: number) => (Math.abs(v) < 1 ? "uguale" : `${v > 0 ? "+" : "−"}${int(Math.abs(v))} s/km`);
+        const first = rows[0].day, last = rows[rows.length - 1].day;
+        const places = rows.map((x) => x.place).filter(Boolean) as string[];
+        return (
+          <Card title="Stesso percorso" icon="map" aside={`${rows.length} volte${places.length ? ` · ${places[places.length - 1]}` : ""}`}>
+            <dl className="kv">
+              <dt className="note">Questa volta</dt><dd><Num v={paceS(me.pace)} unit="/km" /> <span className="note">{rank === 1 ? "la più veloce" : `${rank}ª su ${rows.length}`}</span></dd>
+              <dt className="note">Migliore</dt><dd><Num v={paceS(best.pace)} unit="/km" /> <span className="note">{best.id === a.id ? "questa" : `${day(best.day, { day: "numeric", month: "short", year: "2-digit" })}, ${sgn(me.pace - best.pace)} oggi`}</span></dd>
+              <dt className="note">Media del percorso</dt><dd><Num v={paceS(avg)} unit="/km" /> <span className="note">{sgn(me.pace - avg)} oggi</span></dd>
+            </dl>
+            <TimeChart label="Passo sullo stesso percorso, uscita per uscita" from={addDays(first, -7)} to={addDays(last, 7)} today={false} invert fmt={(v) => paceS(v)} unit="/km" height={120}
+              series={[
+                { name: "Passo", color, kind: "line", width: 1.5, gapDays: 3650, pts: rows.map((x) => ({ d: x.day, v: Math.round(x.pace) })) },
+                { name: "Altre uscite", color, kind: "dots", width: 6, tip: false, pts: rows.filter((x) => x.id !== a.id).map((x) => ({ d: x.day, v: Math.round(x.pace) })) },
+                { name: "Questa", color: "var(--sun)", kind: "dots", width: 10, tip: false, pts: [{ d: me.day, v: Math.round(me.pace) }] },
+              ]} />
+            <DataTable caption="Uscite sullo stesso percorso" initial={{ key: "d", dir: "desc" }}
+              cols={[{ key: "d", label: "Uscita", lead: true, sort: true }, { key: "t", label: "Tempo", r: true, sort: true }, { key: "p", label: "Passo", r: true, sort: true }, { key: "hr", label: "FC", r: true, sort: true }, { key: "e", label: "m/battito", r: true, sort: true }, { key: "g", label: "D+", r: true, sort: true }]}
+              rows={rows.map((x) => ({ key: x.id, hl: x.id === a.id, cells: {
+                d: { t: x.id === a.id ? "Questa uscita" : x.name ?? "Corsa", href: x.id === a.id ? undefined : `/attivita/${x.id}`, sub: `${x.day.split("-").reverse().join("/")} · ${km(x.dist)} km`, v: x.day },
+                t: { t: dur(x.time), v: x.time },
+                p: { t: paceS(x.pace), v: x.pace, sub: x.id === a.id ? undefined : sgn(x.pace - me.pace) },
+                hr: { t: x.hr ? int(x.hr) : "–", v: x.hr },
+                e: { t: x.eff ? dec(x.eff, 2) : "–", v: x.eff },
+                g: { t: x.gain ? int(x.gain) : "–", v: x.gain },
+              } }))} />
+            <p className="note" style={{ marginTop: 8 }}>Stesso percorso: partenza vicina, distanza entro ±10% e tracciati che si sovrappongono (scarto medio sotto 150 m, in qualunque verso). Sotto il passo: differenza rispetto a questa uscita (+ = quella era più lenta). m/battito = metri percorsi per battito cardiaco: a parità di percorso, se sale a parità di passo l&apos;efficienza aerobica migliora. Nel grafico più in alto = più veloce. Il tipo di seduta (facile, ripetute, lungo) cambia il passo: leggilo insieme al nome.</p>
+          </Card>
+        );
+      })()}
 
       {sim.length > 0 && myPace && (
         <Card title="Uscite simili" icon="trend" aside={`${sportLabel(a.sport)}, ${swim ? `${int(dist * 0.8)}–${int(dist * 1.2)} m` : `${km(dist * 0.8, 0)}–${km(dist * 1.2, 0)} km`}`}>

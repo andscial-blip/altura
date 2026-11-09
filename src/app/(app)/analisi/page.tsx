@@ -69,7 +69,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <div className="stack-l">
-      <Head icon="chart" title="Analisi" sub="Volumi, tendenze e prestazioni. Sotto ogni grafico: metodo, fonte e limiti." />
+      <Head icon="chart" title="Analisi" sub="Volumi, tendenze e prestazioni. Sotto ogni grafico: metodo, fonte e limiti." acts={<Link href="/progressi" className="btn sm"><Icon name="trend" size={16} />Progressi</Link>} />
       <nav className="tabs" aria-label="Disciplina">
         {tabs.map((t) => <Link key={t.k} href={`/analisi?sport=${t.k}&g=${W}`} aria-current={t.k === tab.k ? "true" : undefined}><Icon name={t.icon} size={16} />{t.label}</Link>)}
       </nav>
