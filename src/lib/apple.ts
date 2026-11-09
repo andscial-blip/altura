@@ -80,6 +80,19 @@ export const SeriesPayload = z.object({
   workouts: z.object({ types: list, starts: list, ends: list, distances: list, energies: list, distance_unit: z.string().max(10).optional() }).optional(),
 });
 
+/**
+ * Formato "una metrica per richiesta" (il più facile da costruire: tre campi piatti nel corpo JSON).
+ * {metric:"steps", values, dates} oppure {metric:"workouts", types, starts, ends, distances, energies}.
+ */
+export function flatToSeries(b: Record<string, unknown>): unknown {
+  const m = String(b.metric ?? "").trim().toLowerCase();
+  const tz = typeof b.tz === "string" ? b.tz : undefined;
+  if (m === "workouts" || m === "allenamenti") {
+    return { tz, workouts: { types: b.types, starts: b.starts, ends: b.ends, distances: b.distances, energies: b.energies, distance_unit: b.distance_unit } };
+  }
+  return { tz, series: { [m]: { values: b.values, dates: b.dates, ends: b.ends, unit: b.unit } } };
+}
+
 /** Comandi Rapidi invia una lista con un solo elemento come valore semplice, e a volte le liste come testo a righe. */
 export function asList(v: unknown): string[] {
   if (v === undefined || v === null) return [];

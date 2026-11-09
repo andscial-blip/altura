@@ -80,3 +80,13 @@ describe("formato a colonne di Comandi Rapidi", () => {
     expect(workoutNorm(payload.workouts![0]).norm.distance_m).toBe(9200);
   });
 });
+
+import { flatToSeries } from "@/lib/apple";
+describe("una metrica per richiesta", () => {
+  it("passi e allenamenti nel formato piatto", () => {
+    const a = fromSeries(SeriesPayload.parse(flatToSeries({ metric: "steps", values: ["9.001"], dates: ["2026-11-08T00:00:00Z"], tz: "UTC" })));
+    expect(samplesToDaily(a.payload, "UTC")[0]).toMatchObject({ metric: "steps", value: 9001 });
+    const w = fromSeries(SeriesPayload.parse(flatToSeries({ metric: "workouts", types: "Corsa", starts: "2026-11-08T03:00:00Z", ends: "2026-11-08T03:40:00Z", distances: "8 km" })));
+    expect(w.payload.workouts?.[0]).toMatchObject({ type: "Corsa", distance: 8 });
+  });
+});

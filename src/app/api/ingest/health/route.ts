@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { one, q, tx } from "@/lib/db";
 import type { HealthPayload as HP } from "@/lib/apple";
 import { sha256 } from "@/lib/session";
-import { HealthPayload, SeriesPayload, fromSeries, samplesToDaily, workoutNorm } from "@/lib/apple";
+import { HealthPayload, SeriesPayload, flatToSeries, fromSeries, samplesToDaily, workoutNorm } from "@/lib/apple";
 import { finishRun, sanitize, startRun, upsertActivity, upsertDaily } from "@/lib/ingest";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
   let body: unknown;
   try { body = JSON.parse(await req.text()); } catch { return NextResponse.json({ error: "JSON non valido" }, { status: 400 }); }
   // due formati: a campioni (samples/workouts) o a colonne (series), il più semplice da costruire in Comandi Rapidi
+  if (body && typeof body === "object" && "metric" in (body as object)) body = flatToSeries(body as Record<string, unknown>);
   let p: HP;
   let warnings: string[] = [];
   const isSeries = !!body && typeof body === "object" && ("series" in (body as object) || (("workouts" in (body as object)) && !Array.isArray((body as { workouts?: unknown }).workouts)));
