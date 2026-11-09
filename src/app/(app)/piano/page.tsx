@@ -4,7 +4,7 @@ import { addDays, monday, range } from "@/lib/dates";
 import { day, dec, dur, hm, km, pace, todayLocal } from "@/lib/fmt";
 import { compare, type Step } from "@/lib/runna-parse";
 import { StackBars } from "@/components/charts";
-import { Card, Head, Kpi, Legend } from "@/components/Head";
+import { Card, Empty, Head, Kpi, Legend } from "@/components/Head";
 import { StructBar } from "@/components/Act";
 import { Icon, sessionIcon } from "@/components/Icon";
 
@@ -17,7 +17,7 @@ export default async function Page() {
   const mon = monday(today);
   const [rows, done, gl] = await Promise.all([planned(addDays(mon, -28), addDays(mon, 7 * 16)), runnaDone(addDays(mon, -7 * 8)), goals(true)]);
   if (!rows.length && !done.length) {
-    return <div className="stack-l"><Head title="Piano" sub="Programma Runna dal calendario iCal ufficiale." /><div className="card"><p className="empty">Nessuna seduta: il calendario Runna non è collegato o non contiene sedute.</p></div></div>;
+    return <div className="stack-l"><Head title="Piano" sub="Programma Runna dal calendario iCal ufficiale." /><div className="card"><Empty icon="calendar" title="Nessuna seduta Runna" text="Il calendario iCal di Runna non è collegato o non contiene sedute. Serve l'indirizzo iCal su Vercel (RUNNA_ICS_URL)." action={{ href: "/impostazioni", label: "Vai ai collegamenti" }} /></div></div>;
   }
   const curWeek = rows.find((r) => r.day >= today)?.week ?? null;
   const planWeeks = Math.max(0, ...rows.map((r) => r.week ?? 0));
@@ -82,7 +82,7 @@ export default async function Page() {
               </div>
             ))}
           </div>
-        ) : <p className="empty">Settimana senza sedute.</p>}
+        ) : <Empty inline icon="calendar" title="Settimana senza sedute" text="Runna non ha sedute in programma per questa settimana." />}
         <Legend items={[{ label: "Riscaldamento, recupero", color: "var(--z1)" }, { label: "Facile", color: "var(--z2)" }, { label: "Costante", color: "var(--z3)" }, { label: "Lavoro", color: "var(--z4)" }]} />
       </Card>
 

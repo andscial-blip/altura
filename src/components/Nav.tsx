@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { Mark, Wordmark } from "@/components/Mark";
 import { Icon } from "@/components/Icon";
 
@@ -25,8 +26,19 @@ const TOOLS = [
 export function Nav() {
   const p = usePathname();
   const cur = (h: string) => ((h === "/" ? p === "/" : p.startsWith(h)) ? "page" : undefined);
+  // le schede orizzontali (sport, periodi) mostrano sempre quella attiva, anche se è in fondo alla fila
+  useEffect(() => {
+    const show = () => document.querySelectorAll<HTMLElement>('.tabs [aria-current="true"]').forEach((el) => {
+      const box = el.parentElement!; const l = el.offsetLeft - box.offsetLeft, r = l + el.offsetWidth;
+      if (l < box.scrollLeft || r > box.scrollLeft + box.clientWidth) box.scrollTo({ left: l - 16, behavior: "smooth" });
+    });
+    show();
+    const mo = new MutationObserver(show);
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["aria-current"], childList: true });
+    return () => mo.disconnect();
+  }, [p]);
   const link = (i: { href: string; label: string; icon: string }) => (
-    <Link key={i.href} href={i.href} className="nav" aria-current={cur(i.href)}><Icon name={i.icon} size={20} />{i.label}</Link>
+    <Link key={i.href} href={i.href} className="nav" prefetch={true} aria-current={cur(i.href)}><Icon name={i.icon} size={20} />{i.label}</Link>
   );
   return (
     <>
@@ -43,7 +55,7 @@ export function Nav() {
         {MAIN.map((i) => {
           // Mappa vive sotto Attività, Obiettivi sotto Piano: la scheda resta accesa
           const on = cur(i.href) || (i.href === "/attivita" && p.startsWith("/mappa")) || (i.href === "/piano" && p.startsWith("/obiettivi")) ? "page" : undefined;
-          return <Link key={i.href} href={i.href} aria-current={on}><Icon name={i.icon} size={22} />{i.label}</Link>;
+          return <Link key={i.href} href={i.href} prefetch={true} aria-current={on}><Icon name={i.icon} size={22} />{i.label}</Link>;
         })}
       </nav>
     </>

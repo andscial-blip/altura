@@ -1,5 +1,7 @@
-import { Head } from "@/components/Head";
+import { Card, Empty, Head } from "@/components/Head";
+import { DataTable } from "@/components/DataTable";
 import { revalidatePath } from "next/cache";
+import { invalidate } from "@/lib/cache";
 import { q } from "@/lib/db";
 import { lastSyncs } from "@/lib/queries";
 import { garminHistoryState, setGarminHistory } from "@/lib/garmin";
@@ -18,27 +20,32 @@ async function addZone(fd: FormData) {
   const label = String(fd.get("label") ?? "").slice(0, 60) || "Zona privata";
   if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) return;
   await q("insert into sport.private_zones(label, lat, lon, radius_m) values ($1,$2,$3,$4)", [label, lat, lon, r]);
+  invalidate();
   revalidatePath("/impostazioni");
 }
 async function delZone(fd: FormData) {
   "use server";
   await q("delete from sport.private_zones where id = $1", [String(fd.get("id"))]);
+  invalidate();
   revalidatePath("/impostazioni");
 }
 async function history(fd: FormData) {
   "use server";
   const d = String(fd.get("from") ?? "");
   await setGarminHistory(/^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+  invalidate();
   revalidatePath("/impostazioni");
 }
 async function forgetGarminToken() {
   "use server";
   await q("delete from sport.settings where key = 'garmin_token'");
+  invalidate();
   revalidatePath("/impostazioni");
 }
 async function stravaOff() {
   "use server";
   await disconnectStrava();
+  invalidate();
   revalidatePath("/impostazioni");
 }
 const STRAVA_MSG: Record<string, string> = {
@@ -58,6 +65,7 @@ async function deleteSource(fd: FormData) {
   await q("delete from sport.activities a where not exists (select 1 from sport.activity_sources x where x.activity_id = a.id)");
   await q("delete from sport.daily_metrics where source = $1", [s]);
   if (s === "runna") await q("delete from sport.planned_workouts where source = 'runna'");
+  invalidate();
   revalidatePath("/", "layout");
 }
 
@@ -80,76 +88,89 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
     apple_health: "Automazione Comandi Rapidi sull'iPhone con un token creato qui sotto.",
     strava: !env.strava ? "Manca l'app API Strava: STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel." : sconn.connected ? `Collegato con OAuth${sconn.all ? " (anche attività private)" : ""}; token salvati cifrati.` : "App API pronta: manca il collegamento (pulsante qui sotto).",
   };
+  const stLabel = (x?: { status: string }) => (!x ? ["mai", ""] : x.status === "ok" ? ["riuscita", "ok"] : x.status === "partial" ? ["parziale", "warn"] : x.status === "running" ? ["in corso", ""] : ["errore", "bad"]);
   return (
-    <div className="stack" style={{ gap: 20 }}>
-      <Head title="Impostazioni" sub="Collegamenti, privacy e accesso." acts={<SyncOnOpen />} tools={false} />
+    <div className="stack-l">
+      <Head title="Impostazioni" sub="Collegamenti, storico, privacy e accesso." acts={<SyncOnOpen />} />
 
-      <section className="panel scroll-x" tabIndex={0} aria-label="Stato delle fonti">
-        <h2>Collegamenti</h2>
-        <table className="t">
-          <thead><tr><th>Fonte</th><th>Come arrivano i dati</th><th className="r">Attività</th><th>Ultima sincronizzazione</th></tr></thead>
-          <tbody>{["garmin", "runna", "apple_health", "strava"].map((s) => {
-            const r = st(s);
-            return (
-              <tr key={s}>
-                <td style={{ fontWeight: 500 }}>{SOURCE_LABEL[s]}</td>
-                <td>{HOW[s]}</td>
-                <td className="r">{n(s)}</td>
-                <td>{r ? <>{ago(r.started_at)} <span className={`state ${r.status === "ok" ? "ok" : r.status === "error" ? "bad" : "warn"}`}>{r.status}</span>{r.message && r.message !== "ok" ? <div className="note">{r.message}</div> : null}</> : "mai"}</td>
-              </tr>
-            );
-          })}</tbody>
-        </table>
+      <Card title="Collegamenti" icon="sync" aside="chiavi solo sul server">
+        <DataTable caption="Stato delle fonti" cols={[{ key: "f", label: "Fonte", lead: true }, { key: "how", label: "Come arrivano i dati" }, { key: "n", label: "Attività", r: true }, { key: "last", label: "Ultima sincronizzazione" }]}
+          rows={["garmin", "runna", "apple_health", "strava"].map((s) => {
+            const r = st(s); const [lbl] = stLabel(r);
+            return { key: s, cells: { f: { t: SOURCE_LABEL[s] }, how: { t: HOW[s] }, n: { t: String(n(s)), v: n(s) }, last: { t: r ? `${ago(r.started_at)} · ${lbl}` : "mai", sub: r?.message && r.message !== "ok" ? r.message : undefined } } };
+          })} />
         <p className="note" style={{ marginTop: 10 }}>Le chiavi stanno solo nelle variabili d&apos;ambiente del server (Vercel), mai nel browser, nel codice o nei registri. Il token Garmin derivato è salvato cifrato.</p>
-      </section>
+      </Card>
 
-      <section className="panel stack">
-        <h2>Strava</h2>
-        {sp.strava && STRAVA_MSG[sp.strava] ? <p className={`state ${sp.strava === "ok" ? "ok" : "warn"}`}>{STRAVA_MSG[sp.strava]}</p> : null}
-        <p className="note">Serve soprattutto per lo storico registrato prima di Garmin (altri orologi o app). Le uscite registrate da entrambi restano una sola attività: per i campi vale Garmin. I dati Strava si vedono solo qui e non servono ad addestrare modelli.</p>
-        {sconn.connected
-          ? <form action={stravaOff} className="row"><span>Collegato{sconn.athlete_id ? ` (atleta ${sconn.athlete_id})` : ""}.</span><button className="btn">Scollega Strava</button></form>
-          : env.strava
-            ? <div className="row"><a className="btn primary" href="/api/strava/connect">Collega Strava</a></div>
-            : <p className="note">Prima crea l&apos;app API su strava.com/settings/api e aggiungi STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel.</p>}
-      </section>
+      <div className="grid g2">
+        <Card title="Strava" icon="activity">
+          <div className="stack">
+            {sp.strava && STRAVA_MSG[sp.strava] ? <p className={`alert ${sp.strava === "ok" ? "ok" : ""}`} role="status">{STRAVA_MSG[sp.strava]}</p> : null}
+            <p className="note">Serve soprattutto per lo storico registrato prima di Garmin e per i nomi delle uscite. Le uscite registrate da entrambi restano una sola attività. I dati Strava si vedono solo qui e non servono ad addestrare modelli.</p>
+            {sconn.connected
+              ? <form action={stravaOff} className="row between"><span className="badge ok">Collegato{sconn.athlete_id ? ` · atleta ${sconn.athlete_id}` : ""}</span><button className="btn sm">Scollega Strava</button></form>
+              : env.strava
+                ? <div className="row"><a className="btn primary" href="/api/strava/connect">Collega Strava</a></div>
+                : <p className="alert">Prima crea l&apos;app API su strava.com/settings/api e aggiungi STRAVA_CLIENT_ID e STRAVA_CLIENT_SECRET su Vercel.</p>}
+          </div>
+        </Card>
 
-      <section className="grid g2">
-        <div className="panel stack">
-          <h2>Storico Garmin</h2>
-          <p className="note">Ogni sincronizzazione importa anche un blocco di 60 giorni più vecchio, fino alla data scelta. I file FIT (tracciato e altimetria) arrivano a gruppi.</p>
-          <p>{hist.history_from ? `Importazione dal ${hist.history_from}; arrivata al ${hist.backfill_before ?? "–"}.` : `Importati gli ultimi mesi${hist.backfill_before ? ` (dal ${hist.backfill_before})` : ""}.`} File FIT in coda: {hist.fit_pending}.</p>
-          <form action={history} className="row"><input className="in" type="date" name="from" defaultValue={hist.history_from ?? "2022-01-01"} aria-label="Importa dal" /><button className="btn">Importa lo storico da questa data</button></form>
-          <form action={forgetGarminToken}><button className="btn">Dimentica il token Garmin salvato</button></form>
-        </div>
-        <div className="panel stack">
-          <h2>Zone private</h2>
-          <p className="note">I punti GPS entro il raggio non vengono mai mostrati sulle mappe.</p>
-          {zones.map((z) => <form key={z.id} action={delZone} className="row between"><span>{z.label}, raggio {z.radius_m} m</span><input type="hidden" name="id" value={z.id} /><button className="btn danger">Rimuovi</button></form>)}
-          <form action={addZone} className="grid g2" style={{ alignItems: "end" }}>
-            <input className="in" name="label" placeholder="Casa" aria-label="Nome della zona" />
-            <input className="in" name="r" type="number" min={100} max={2000} defaultValue={400} aria-label="Raggio in metri" />
-            <input className="in" name="lat" placeholder="Latitudine, es. -13,6833" required aria-label="Latitudine" />
-            <input className="in" name="lon" placeholder="Longitudine, es. 48,4500" required aria-label="Longitudine" />
-            <button className="btn primary">Aggiungi zona</button>
-          </form>
-        </div>
-      </section>
+        <Card title="Storico Garmin" icon="clock">
+          <div className="stack">
+            <dl className="kv">
+              <dt>Importa dal</dt><dd className="mono">{hist.history_from ?? "ultimi 4 mesi"}</dd>
+              <dt>Attività arrivate al</dt><dd className="mono">{hist.backfill_before ?? "–"}{hist.history_from && hist.backfill_before && hist.backfill_before <= hist.history_from ? " · completo" : ""}</dd>
+              <dt>Sonno, variabilità, battito arrivati al</dt><dd className="mono">{hist.daily_back_before ?? (hist.history_from ? "in attesa" : "ultimi 4 mesi")}{hist.history_from && hist.daily_back_before && hist.daily_back_before <= hist.history_from ? " · completo" : ""}</dd>
+              <dt>File FIT in coda</dt><dd className="mono">{hist.fit_pending}</dd>
+            </dl>
+            <p className="note">Ogni sincronizzazione scende di qualche mese finché ha tempo; i file FIT (tracciato, altimetria, giri) arrivano a gruppi. Tocca l&apos;icona di sincronizzazione per farla avanzare.</p>
+            <form action={history} className="row"><label className="fld" style={{ flex: 1 }}>Importa dal<input className="in" type="date" name="from" defaultValue={hist.history_from ?? "2022-01-01"} /></label><button className="btn" style={{ alignSelf: "flex-end" }}>Imposta</button></form>
+            <form action={forgetGarminToken}><button className="btn sm">Dimentica il token Garmin salvato</button></form>
+          </div>
+        </Card>
+      </div>
+
+      <Card title="Metodo della sintesi di Oggi" icon="target" aside="regole fisse">
+        <p className="note" style={{ marginBottom: 8 }}>La sintesi confronta i dati di oggi con la tua norma recente. Un segnale è &quot;da considerare&quot; quando:</p>
+        <dl className="kv" style={{ maxWidth: 720 }}>
+          <dt>Variabilità notturna</dt><dd>sotto il limite basso della tua fascia abituale (calcolata da Garmin)</dd>
+          <dt>Battito a riposo</dt><dd>5 bpm o più sopra la media dei 7 giorni precedenti</dd>
+          <dt>Sonno</dt><dd>meno di 6 ore, o più di 1 ora sotto la media delle 7 notti precedenti</dd>
+          <dt>Carico 7/28 giorni</dt><dd>rapporto sopra 1,3 (aumento rapido)</dd>
+        </dl>
+        <p className="note" style={{ marginTop: 8 }}>Valgono solo i dati di oggi. Con meno di due segnali disponibili la sintesi dice &quot;dati insufficienti&quot;. Non è un consiglio medico né di allenamento.</p>
+      </Card>
 
       <Tokens />
 
-      <section className="grid g2">
+      <div className="grid g2">
+        <Card title="Zone private" icon="map">
+          <div className="stack">
+            <p className="note">I punti GPS entro il raggio non compaiono mai su mappe e miniature.</p>
+            {zones.length ? zones.map((z) => <form key={z.id} action={delZone} className="row between"><span>{z.label} · raggio {z.radius_m} m</span><input type="hidden" name="id" value={z.id} /><button className="btn sm danger">Rimuovi</button></form>)
+              : <Empty inline icon="map" title="Nessuna zona privata" text="Aggiungi casa o lavoro per nasconderne i dintorni." />}
+            <form action={addZone} className="grid g2 t2" style={{ alignItems: "end" }}>
+              <label className="fld">Nome<input className="in" name="label" placeholder="Casa" /></label>
+              <label className="fld">Raggio (m)<input className="in" name="r" type="number" min={100} max={2000} defaultValue={400} /></label>
+              <label className="fld">Latitudine<input className="in" name="lat" placeholder="-13,6833" inputMode="decimal" required /></label>
+              <label className="fld">Longitudine<input className="in" name="lon" placeholder="48,4500" inputMode="decimal" required /></label>
+              <button className="btn primary">Aggiungi zona</button>
+            </form>
+          </div>
+        </Card>
         <Devices passkeys={passkeys.map((p) => ({ ...p, created: when(p.created_at), used: p.last_used_at ? ago(p.last_used_at) : "mai" }))} />
-        <div className="panel stack">
-          <h2>Elimina i dati di una fonte</h2>
-          <p className="note">Toglie tutti i record di quella fonte; le attività registrate solo da lì spariscono, le altre restano con le fonti rimanenti. Scrivi ELIMINA per confermare.</p>
-          <form action={deleteSource} className="row">
-            <select className="in" name="source" aria-label="Fonte">{["runna", "apple_health", "strava"].map((s) => <option key={s} value={s}>{SOURCE_LABEL[s]}</option>)}</select>
-            <input className="in" name="confirm" placeholder="ELIMINA" aria-label="Conferma" />
-            <button className="btn danger">Elimina</button>
+      </div>
+
+      <Card title="Elimina i dati di una fonte" icon="settings">
+        <div className="stack">
+          <p className="note">Toglie tutti i record di quella fonte; le attività registrate solo da lì spariscono, le altre restano con le fonti rimanenti. Scrivi ELIMINA per confermare: non si può annullare.</p>
+          <form action={deleteSource} className="grid g3" style={{ alignItems: "end" }}>
+            <label className="fld">Fonte<select className="in" name="source">{["runna", "apple_health", "strava"].map((s) => <option key={s} value={s}>{SOURCE_LABEL[s]}</option>)}</select></label>
+            <label className="fld">Conferma<input className="in" name="confirm" placeholder="ELIMINA" autoComplete="off" /></label>
+            <button className="btn danger">Elimina i dati</button>
           </form>
         </div>
-      </section>
+      </Card>
     </div>
   );
 }

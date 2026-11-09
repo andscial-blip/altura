@@ -1,9 +1,10 @@
 import { revalidatePath } from "next/cache";
+import { invalidate } from "@/lib/cache";
 import { q } from "@/lib/db";
 import { day, dec, dur, km, todayLocal } from "@/lib/fmt";
 import { runBests } from "@/lib/queries";
 import { isNum, riegel } from "@/lib/stats";
-import { Card, Head } from "@/components/Head";
+import { Card, Empty, Head } from "@/components/Head";
 import { Icon } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
@@ -21,11 +22,13 @@ async function addGoal(fd: FormData) {
   if (!name) return;
   const target = kind === "gara" ? { dist_m: distKm ? distKm * 1000 : null, time_s } : kind === "volume" ? { km_week: weekly } : { gain_week_m: weekly };
   await q("insert into sport.goals(id, name, kind, target_date, target) values (gen_random_uuid()::text, $1, $2, $3, $4::jsonb)", [name, kind, date, JSON.stringify(target)]);
+  invalidate();
   revalidatePath("/obiettivi");
 }
 async function toggle(fd: FormData) {
   "use server";
   await q("update sport.goals set active = not active where id = $1", [String(fd.get("id"))]);
+  invalidate();
   revalidatePath("/obiettivi");
 }
 
@@ -43,7 +46,7 @@ export default async function Page() {
   return (
     <div className="stack-l">
       <Head title="Obiettivi" sub="Gare e test arrivano da Runna; volumi e dislivello li aggiungi tu. Il progresso si calcola dai dati." back={{ href: "/piano", label: "Piano" }} />
-      {goals.length === 0 && <div className="card"><p className="empty">Nessun obiettivo. Aggiungine uno qui sotto, per esempio la prossima gara.</p></div>}
+      {goals.length === 0 && <div className="card"><Empty icon="target" title="Nessun obiettivo" text="Gare e test arrivano da Runna da soli; qui sotto puoi aggiungere volumi settimanali o dislivello." /></div>}
       <div className="grid g2">
         {goals.map((g) => {
           const daysLeft = g.target_date ? Math.round((Date.parse(g.target_date) - Date.parse(today)) / 86400_000) : null;

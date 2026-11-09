@@ -25,7 +25,7 @@ export function Access() {
       if (!v.ok) throw new Error(j.error ?? "Accesso non riuscito.");
       done();
     } catch (e) {
-      setErr(e instanceof Error && e.name === "NotAllowedError" ? "Accesso annullato." : (e as Error).message);
+      setErr(e instanceof Error && e.name === "NotAllowedError" ? "Accesso annullato o passkey non trovata su questo dispositivo. Se è un dispositivo nuovo, entra da quello già registrato e aggiungilo da Impostazioni." : !navigator.onLine ? "Sei offline: serve la connessione per entrare." : (e as Error).message || "Accesso non riuscito: riprova.");
     } finally { setBusy(false); }
   }
 
@@ -45,13 +45,13 @@ export function Access() {
     } finally { setBusy(false); }
   }
 
-  if (registered === null) return <div className="panel"><p className="muted">Controllo lo stato dell&apos;accesso…</p></div>;
+  if (registered === null) return <div className="card stack" aria-busy="true"><div className="skel" style={{ height: 20, width: "40%" }} /><div className="skel" style={{ height: 14, width: "70%" }} /><div className="skel" style={{ height: 44 }} /></div>;
   return (
-    <div className="panel stack">
+    <div className="card stack">
       {registered ? (
         <>
           <h2>Entra</h2>
-          <p className="muted">Usa la passkey di questo dispositivo.</p>
+          <p className="muted">Usa Face ID, Touch ID o l&apos;impronta di questo dispositivo.</p>
           <button className="btn primary" onClick={login} disabled={busy}>{busy ? "Attendo il dispositivo…" : "Entra con passkey"}</button>
         </>
       ) : (
@@ -62,7 +62,7 @@ export function Access() {
           <button className="btn primary" onClick={register} disabled={busy || setup.trim().length < 16}>{busy ? "Attendo il dispositivo…" : "Crea passkey"}</button>
         </>
       )}
-      {err && <p role="alert" style={{ color: "var(--bad)" }}>{err}</p>}
+      {err && <p className="alert bad" role="alert">{err}</p>}
     </div>
   );
 }

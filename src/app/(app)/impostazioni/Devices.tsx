@@ -13,16 +13,18 @@ export function Devices({ passkeys }: { passkeys: { id: string; device_label: st
       const v = await fetch("/api/auth/register-verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(resp) });
       if (!v.ok) throw new Error((await v.json()).error);
       setMsg("Passkey aggiunta."); location.reload();
-    } catch (e) { setMsg((e as Error).message || "Non riuscito."); }
+    } catch (e) { setMsg(e instanceof Error && e.name === "NotAllowedError" ? "Operazione annullata sul dispositivo." : (e as Error).message || "Non è stato possibile aggiungere la passkey: riprova."); }
   };
   const logout = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.href = "/accesso"; };
   return (
-    <div className="panel stack">
-      <h2>Accesso</h2>
-      {passkeys.map((p) => <div key={p.id} className="row between"><span>{p.device_label ?? "Dispositivo"}</span><span className="note">creata {p.created}, ultimo accesso {p.used}</span></div>)}
-      <p className="note">Su iPhone e Mac con lo stesso ID Apple la passkey si sincronizza da sola con il Portachiavi iCloud. Per un dispositivo diverso, aprilo con una sessione attiva e aggiungi la passkey qui.</p>
-      <div className="row"><button className="btn" onClick={add}>Aggiungi passkey su questo dispositivo</button><button className="btn" onClick={logout}>Esci</button></div>
-      {msg && <p role="status">{msg}</p>}
-    </div>
+    <section className="card" aria-labelledby="dev-h">
+      <div className="card-h"><h2 id="dev-h">Accesso</h2><span className="aside">passkey</span></div>
+      <div className="stack">
+        {passkeys.map((p) => <div key={p.id} className="row between"><span>{p.device_label ?? "Dispositivo"}</span><span className="note">creata {p.created} · ultimo accesso {p.used}</span></div>)}
+        <p className="note">Su iPhone e Mac con lo stesso ID Apple la passkey si sincronizza da sola con il Portachiavi iCloud. Per un altro dispositivo, aprilo con una sessione attiva e aggiungi la passkey qui.</p>
+        <div className="row"><button className="btn" onClick={add}>Aggiungi passkey su questo dispositivo</button><button className="btn" onClick={logout}>Esci</button></div>
+        {msg && <p className={`alert ${msg === "Passkey aggiunta." ? "ok" : "bad"}`} role="status">{msg}</p>}
+      </div>
+    </section>
   );
 }

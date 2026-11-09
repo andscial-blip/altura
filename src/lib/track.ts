@@ -1,10 +1,11 @@
 import "server-only";
 import { maskPrivate } from "@/lib/model";
 import { privateZones } from "@/lib/queries";
+import { cached } from "@/lib/cache";
 
 /** Tracciato pronto per il browser: zone private tolte, punti ridotti, spezzato dove mancano punti. */
-export async function publicTrack(lat: (number | null)[] = [], lon: (number | null)[] = [], maxPts = 1200): Promise<[number, number][][]> {
-  const zones = await privateZones();
+export async function publicTrack(lat: (number | null)[] = [], lon: (number | null)[] = [], maxPts = 1200, zonesIn?: Awaited<ReturnType<typeof privateZones>>): Promise<[number, number][][]> {
+  const zones = zonesIn ?? await privateZones();
   const m = maskPrivate(lat, lon, zones);
   const step = Math.max(1, Math.ceil(m.lat.length / maxPts));
   const segs: [number, number][][] = [];
@@ -19,7 +20,7 @@ export async function publicTrack(lat: (number | null)[] = [], lon: (number | nu
 }
 
 /** Miniature dei percorsi: ~80 punti campionati nel database, zone private tolte, path SVG in un riquadro 100×100. */
-export async function thumbs(ids: string[]): Promise<Record<string, string>> {
+async function thumbs_(ids: string[]): Promise<Record<string, string>> {
   if (!ids.length) return {};
   const { q } = await import("@/lib/db");
   const rows = await q<{ id: string; lat: (number | null)[]; lon: (number | null)[] }>(
@@ -28,8 +29,9 @@ export async function thumbs(ids: string[]): Promise<Record<string, string>> {
             array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 80)) i) as lon
        from sport.activity_streams t where t.activity_id = any($1::uuid[]) and t.start_lat is not null`, [ids]);
   const out: Record<string, string> = {};
+  const zones = await privateZones();
   for (const r of rows) {
-    const segs = await publicTrack(r.lat, r.lon, 200);
+    const segs = await publicTrack(r.lat, r.lon, 200, zones);
     const pts = segs.flat();
     if (pts.length < 2) continue;
     const la = pts.map((p) => p[0]), lo = pts.map((p) => p[1]);
@@ -40,3 +42,5 @@ export async function thumbs(ids: string[]): Promise<Record<string, string>> {
   }
   return out;
 }
+
+export const thumbs = cached("thumbs", thumbs_);

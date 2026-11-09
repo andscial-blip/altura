@@ -4,6 +4,7 @@
  * il punto di oggi in giallo, assi con valori "tondi".
  */
 import { Tip, type TipRow } from "@/components/Tip";
+import { Empty } from "@/components/Head";
 import { isNum, niceTicks } from "@/lib/stats";
 import { day } from "@/lib/fmt";
 
@@ -17,13 +18,13 @@ function yScale(lo: number, hi: number) {
   return (v: number) => PAD + (1 - (v - lo) / (hi - lo || 1)) * (H - 2 * PAD);
 }
 
-function Frame({ height, yTicks, xTicks, tips, label, children, after }: {
-  height: number; yTicks: Axis[]; xTicks: { x: number; label: string }[]; tips: TipRow[]; label: string; children: React.ReactNode; after?: React.ReactNode;
+function Frame({ height, yTicks, xTicks, tips, label, children, after, zoomHref }: {
+  height: number; yTicks: Axis[]; xTicks: { x: number; label: string }[]; tips: TipRow[]; label: string; children: React.ReactNode; after?: React.ReactNode; zoomHref?: string;
 }) {
   return (
-    <Tip tips={tips}>
+    <Tip tips={tips} label={label} zoomHref={zoomHref}>
       <div className="plot">
-        <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} role="img" aria-label={label}>
+        <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height }} aria-hidden="true">
           <g aria-hidden="true">{yTicks.map((t) => <path key={t.v} d={`M0 ${f1(t.y)}H${W}`} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />)}</g>
           {children}
         </svg>
@@ -47,13 +48,13 @@ function dateTicks(t0: number, t1: number, n = 3) {
 export type Series = { name: string; pts: { d: string; v: number | null }[]; kind?: "line" | "area" | "dots" | "bars"; color: string; width?: number; dash?: boolean; gapDays?: number };
 
 /** Serie temporali su asse del tempo reale, con fascia di riferimento, linea di riferimento e punto di oggi. */
-export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain }: {
+export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", height = 130, label, maxGapDays = 2.5, today = true, domain, zoomHref }: {
   series: Series[]; from: string; to: string; band?: { lo: number; hi: number } | null; refLine?: { v: number; dash?: boolean } | null;
-  fmt: (v: number) => string; unit?: string; height?: number; label: string; maxGapDays?: number; today?: boolean; domain?: [number, number];
+  fmt: (v: number) => string; unit?: string; height?: number; label: string; maxGapDays?: number; today?: boolean; domain?: [number, number]; zoomHref?: string;
 }) {
   const t0 = dms(from), t1 = dms(to);
   const all = series.flatMap((s) => s.pts.map((p) => p.v)).filter(isNum);
-  if (all.length < 2) return <p className="empty">Dati insufficienti per un andamento.</p>;
+  if (all.length < 2) return <Empty inline icon="chart" title="Dati insufficienti per un andamento" text="Servono almeno due giorni con un valore in questo periodo." />;
   let lo = domain?.[0] ?? Math.min(...all, band?.lo ?? Infinity, refLine?.v ?? Infinity);
   let hi = domain?.[1] ?? Math.max(...all, band?.hi ?? -Infinity, refLine?.v ?? -Infinity);
   if (!domain) { const p = (hi - lo) * 0.08 || 1; lo -= p; hi += p; if (series.some((s) => s.kind === "bars")) lo = Math.min(0, lo); }
@@ -91,10 +92,10 @@ export function TimeChart({ series, from, to, band, refLine, fmt, unit = "", hei
   if (today && last) els.push(<path key="today" d={`M${f1(X(last.d))} ${f1(Y(last.v))}h0`} stroke="var(--sun)" strokeWidth="9" strokeLinecap="round" vectorEffect="non-scaling-stroke" />);
   const days = [...new Set(series.flatMap((s) => s.pts.filter((p) => isNum(p.v)).map((p) => p.d)))].sort();
   const tips: TipRow[] = days.map((d) => ({
-    x: (dms(d) - t0) / (t1 - t0 || 1),
+    x: (dms(d) - t0) / (t1 - t0 || 1), d,
     lines: [day(d, { weekday: "short", day: "numeric", month: "short" }), ...series.map((s) => { const p = s.pts.find((q) => q.d === d); return p && isNum(p.v) ? `${series.length > 1 ? s.name + " " : ""}${fmt(p.v)}${unit ? " " + unit : ""}` : null; }).filter((x): x is string => !!x)],
   }));
-  return <Frame height={height} yTicks={ticks} xTicks={dateTicks(t0, t1)} tips={tips} label={label}>{els}</Frame>;
+  return <Frame height={height} yTicks={ticks} xTicks={dateTicks(t0, t1)} tips={tips} label={label} zoomHref={zoomHref}>{els}</Frame>;
 }
 
 /** Barre per categoria (settimane), impilate per disciplina, con linea opzionale (media mobile). */
@@ -131,7 +132,7 @@ export function Scatter({ pts, xDomain, yDomain, trend, xFmt, yFmt, color = "var
   pts: { x: number; y: number; tip: string }[]; xDomain?: [number, number]; yDomain?: [number, number]; trend?: { a: number; b: number } | null;
   xFmt: (v: number) => string; yFmt: (v: number) => string; color?: string; height?: number; label: string; xTicksN?: number;
 }) {
-  if (pts.length < 3) return <p className="empty">Dati insufficienti per un confronto.</p>;
+  if (pts.length < 3) return <Empty inline icon="chart" title="Dati insufficienti per un confronto" text="Servono almeno tre punti." />;
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const [x0, x1] = xDomain ?? [Math.min(...xs), Math.max(...xs)];
   let [lo, hi] = yDomain ?? [Math.min(...ys), Math.max(...ys)];
@@ -149,7 +150,7 @@ export function Scatter({ pts, xDomain, yDomain, trend, xFmt, yFmt, color = "var
 export function RangeBars({ pts, from, to, fmt, height = 110, label, color = "var(--h2)", domain = [0, 100] }: {
   pts: { d: string; lo: number; hi: number }[]; from: string; to: string; fmt: (v: number) => string; height?: number; label: string; color?: string; domain?: [number, number];
 }) {
-  if (pts.length < 2) return <p className="empty">Dati insufficienti.</p>;
+  if (pts.length < 2) return <Empty inline icon="chart" title="Dati insufficienti" text="Servono almeno due giorni con un valore." />;
   const t0 = dms(from), t1 = dms(to), Y = yScale(domain[0], domain[1]), X = (d: string) => ((dms(d) - t0) / (t1 - t0 || 1)) * W;
   const span = Math.max(1, (t1 - t0) / 86400000);
   const ticks = niceTicks(domain[0], domain[1], 2).map((v) => ({ v, y: Y(v), label: fmt(v) }));
@@ -206,7 +207,7 @@ export function Profiles({ x, rows, label }: {
     lines: [`km ${((x[i] as number) / 1000).toLocaleString("it-IT", { maximumFractionDigits: 1 })}`, ...usable.map((r) => (isNum(r.ys[i]) ? `${r.name} ${r.fmt(r.ys[i] as number)}` : null)).filter((s): s is string => !!s)],
   }));
   return (
-    <Tip tips={tips}>
+    <Tip tips={tips} label={label}>
       {usable.map((r) => {
         const vals = idx.map((i) => r.ys[i]).filter(isNum).sort((a, b) => a - b);
         // estremi robusti (1°–99° percentile): un picco GPS non schiaccia il grafico
@@ -225,7 +226,7 @@ export function Profiles({ x, rows, label }: {
           <div key={r.name} style={{ marginBottom: 6 }}>
             <div className="note" style={{ fontWeight: 600, color: "var(--ink-2)" }}>{r.name}</div>
             <div className="plot">
-              <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height: 70 }} role="img" aria-label={`${label}: ${r.name}`}>
+              <svg className="c" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ height: 70 }} aria-hidden="true">
                 {ticks.map((t) => <path key={t.v} d={`M0 ${f1(t.y)}H${W}`} stroke="var(--line-2)" vectorEffect="non-scaling-stroke" />)}
                 {r.band && <rect x="0" width={W} y={f1(Math.min(Y(r.band.lo), Y(r.band.hi)))} height={f1(Math.abs(Y(r.band.lo) - Y(r.band.hi)))} fill="var(--warn-bg)" />}
                 {r.area && <path d={`${d}L${lastX} ${H}L${first} ${H}Z`} fill={r.color} opacity=".15" />}
@@ -253,6 +254,12 @@ export function Heatmap({ weeks, label }: { weeks: { start: string; days: { d: s
         <span style={{ left: 0 }}>{day(weeks[0].start, { day: "numeric", month: "short" })}</span>
         <span style={{ left: "100%" }}>{day(weeks[weeks.length - 1].start, { day: "numeric", month: "short" })}</span>
       </div>
+      <details className="data">
+        <summary>Giorni attivi in elenco ({weeks.flatMap((w) => w.days).filter((c) => c.level > 0).length})</summary>
+        <div className="dtab" tabIndex={0} role="region" aria-label="Giorni attivi">
+          <table><tbody>{weeks.flatMap((w) => w.days).filter((c) => c.level > 0).map((c) => <tr key={c.d}><td>{c.tip}</td></tr>)}</tbody></table>
+        </div>
+      </details>
     </div>
   );
 }
@@ -260,7 +267,7 @@ export function Heatmap({ weeks, label }: { weeks: { start: string; days: { d: s
 /** Distribuzione nelle zone di battito Z1–Z5 (tempo in secondi). */
 export function Zones({ secs }: { secs: number[] }) {
   const tot = secs.reduce((a, b) => a + b, 0);
-  if (!tot) return <p className="empty">Nessun dato di zona.</p>;
+  if (!tot) return <Empty inline icon="heart" title="Nessun dato di zona" text="Il dispositivo non ha registrato il tempo nelle zone di battito." />;
   const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
   return (
     <div role="img" aria-label={`Zone di battito: ${secs.map((s, i) => `Z${i + 1} ${Math.round((s / tot) * 100)}%`).join(", ")}`}>

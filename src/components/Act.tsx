@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SportIcon, sportMeta } from "@/components/Icon";
 import { day, dur, int, km, pace, sportLabel, when } from "@/lib/fmt";
+import { Num } from "@/components/Head";
 
 const ON_FOOT = ["run", "trail_run", "treadmill", "hike", "walk"];
 export const SPORT_COLOR: Record<string, string> = { corsa: "var(--run)", montagna: "var(--mnt)", nuoto: "var(--swim)", bici: "var(--ride)", forza: "var(--str)", altro: "var(--oth)" };
@@ -31,11 +32,12 @@ export function ActCard({ a, path, compact = false }: { a: ActLite; path?: strin
         <div className="n">{a.name ?? sportLabel(a.sport)}</div>
         <div className="t">{sportLabel(a.sport)} · {compact ? day(a.start_utc, { weekday: "short", day: "numeric", month: "short" }) : when(a.start_utc)}</div>
         <div className="m">
-          {a.distance_m ? <span><b>{km(a.distance_m)}</b> km</span> : null}
-          <span><b>{dur(t)}</b></span>
-          {foot && !climb ? <span><b>{pace(a.distance_m, t)}</b> /km</span> : null}
-          {climb ? <span><b>{int(a.elev_gain_m)}</b> m D+</span> : null}
-          {!compact && a.avg_hr ? <span><b>{int(a.avg_hr)}</b> bpm</span> : null}
+          {a.distance_m ? (a.sport === "swim" ? <Num v={int(a.distance_m)} unit="m" /> : <Num v={km(a.distance_m)} unit="km" />) : null}
+          <Num v={dur(t)} />
+          {foot && !climb ? <Num v={pace(a.distance_m, t)} unit="/km" /> : null}
+          {a.sport === "swim" && a.distance_m && t ? <Num v={pace(Number(a.distance_m) * 10, t)} unit="/100 m" /> : null}
+          {climb ? <Num v={int(a.elev_gain_m)} unit="m D+" /> : null}
+          {!compact && a.avg_hr ? <Num v={int(a.avg_hr)} unit="bpm" /> : null}
         </div>
       </div>
     </Link>
@@ -43,7 +45,10 @@ export function ActCard({ a, path, compact = false }: { a: ActLite; path?: strin
 }
 
 type Step = { kind?: string; m?: number; s?: number | null; pace?: number; limit?: number };
-/** Struttura della seduta Runna: un blocco per passo, largo quanto la sua durata stimata, alto quanto l'intensità. */
+/**
+ * Struttura PREVISTA della seduta Runna: un blocco per passo del programma, largo quanto la sua durata stimata
+ * (distanza × passo obiettivo, 5:30/km se il passo è libero; durata esatta quando Runna la indica), alto quanto l'intensità.
+ */
 export function StructBar({ steps }: { steps?: unknown[] }) {
   const st = (steps ?? []) as Step[];
   if (!st.length) return null;
@@ -51,7 +56,7 @@ export function StructBar({ steps }: { steps?: unknown[] }) {
   const cls = (k?: string) => (k === "work" ? "t" : k === "rest" ? "r" : k === "warm" || k === "cool" ? "w" : k === "float" ? "s" : "e");
   const tot = st.reduce((a, s) => a + est(s), 0) || 1;
   return (
-    <div className="struct" role="img" aria-label={`Struttura: ${st.length} blocchi`}>
+    <div className="struct" role="img" aria-label={`Struttura prevista: ${st.length} blocchi (${st.filter((x) => x.kind === "work").length} di lavoro); larghezze in proporzione alla durata stimata`} title="Struttura prevista: larghezza = durata stimata">
       {st.map((s, i) => <span key={i} className={cls(s.kind)} style={{ flex: `${est(s) / tot} 0 0` }} />)}
     </div>
   );

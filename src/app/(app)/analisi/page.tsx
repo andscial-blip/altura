@@ -5,7 +5,8 @@ import { isNum, linreg, pctDelta, riegel, rolling } from "@/lib/stats";
 import { addDays, monday, range } from "@/lib/dates";
 import { day, dec, dur, hm, int, km, paceS, todayLocal } from "@/lib/fmt";
 import { Heatmap, StackBars, TimeChart } from "@/components/charts";
-import { Card, Head, Kpi, Legend, Seg } from "@/components/Head";
+import { Card, Empty, Head, Kpi, Legend, Seg } from "@/components/Head";
+import { DataTable } from "@/components/DataTable";
 import { FAM_LABEL, SPORT_COLOR } from "@/components/Act";
 import { Icon, sportMeta } from "@/components/Icon";
 
@@ -32,8 +33,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   const from = addDays(mon, -7 * (W - 1)), prevFrom = addDays(from, -7 * W);
   const days = W * 7 + 7;
 
+  const sparse = ["nuoto", "bici", "altro"].includes(tab.k);
   const [all, load, eff, bests, gl] = await Promise.all([
-    periodActs(addDays(prevFrom, -21)), tab.k === "tutte" ? dailyLoad(days + 28) : Promise.resolve([]),
+    periodActs(sparse ? "1990-01-01" : addDays(prevFrom, -21)), tab.k === "tutte" ? dailyLoad(days + 28) : Promise.resolve([]),
     tab.k === "corsa" ? runEfficiency(Math.max(days, 182)) : Promise.resolve([]), tab.k === "corsa" ? runBests(Math.max(days, 182)) : Promise.resolve([]), goals(true),
   ]);
   const mine = (a: { sport: string }) => tab.k === "tutte" || tab.sports.includes(a.sport);
@@ -48,7 +50,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
   const weeks = Array.from({ length: W + 3 }, (_, i) => addDays(from, 7 * (i - 3)));
   const wOf = (d: string) => monday(d);
   const fams = tab.k === "tutte" ? [...new Set(acts.map((a) => sportMeta(a.sport).fam))] : [sportMeta(tab.sports[0]).fam];
-  const metric = tab.k === "tutte" || tab.k === "altro" ? { f: (a: (typeof acts)[number]) => a.time / 3600, fmt: (v: number) => dec(v, v < 10 ? 1 : 0), unit: "h", name: "Ore" }
+  const swim = tab.k === "nuoto";
+  const metric = swim ? { f: (a: (typeof acts)[number]) => a.dist, fmt: (v: number) => int(v), unit: "m", name: "Metri" }
+    : tab.k === "tutte" || tab.k === "altro" ? { f: (a: (typeof acts)[number]) => a.time / 3600, fmt: (v: number) => dec(v, v < 10 ? 1 : 0), unit: "h", name: "Ore" }
     : tab.k === "montagna" ? { f: (a: (typeof acts)[number]) => a.gain, fmt: (v: number) => int(v), unit: "m", name: "Dislivello" }
     : { f: (a: (typeof acts)[number]) => a.dist / 1000, fmt: (v: number) => dec(v, v < 10 ? 1 : 0), unit: "km", name: "Distanza" };
   const stacksAll = fams.map((f) => ({ name: FAM_LABEL[f] ?? f, color: SPORT_COLOR[f] ?? "var(--oth)", values: weeks.map((w) => tot(acts.filter((a) => wOf(a.day) === w && sportMeta(a.sport).fam === f), metric.f)) }));
@@ -72,32 +76,41 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ s
       <Seg className="inline" label="Periodo" items={PERIODS.map(([n, l]) => ({ href: `/analisi?sport=${tab.k}&g=${n}`, label: l, on: n === W }))} />
 
       <div className="kpis">
-        <Kpi label="Uscite" icon="activity" value={int(N.c)} delta={dl(N)} foot={`${activeDays} giorni attivi`} />
+        <Kpi label="Uscite" icon="activity" value={int(N.c)} delta={dl(N)} foot={`${activeDays} ${activeDays === 1 ? "giorno attivo" : "giorni attivi"}`} />
         <Kpi label="Tempo" icon="clock" value={hm(T.c)} delta={dl(T)} foot={`${hm(T.c / W)}/sett.`} />
-        {tab.k !== "montagna" ? <Kpi label="Distanza" icon="distance" value={km(D.c, 0)} unit="km" delta={dl(D)} foot={`${km(D.c / W, 1)} km/sett.`} />
+        {swim ? <Kpi label="Distanza" icon="distance" value={int(D.c)} unit="m" delta={dl(D)} />
+          : tab.k !== "montagna" ? <Kpi label="Distanza" icon="distance" value={km(D.c, 0)} unit="km" delta={dl(D)} foot={`${km(D.c / W, 1)} km/sett.`} />
           : <Kpi label="Dislivello" icon="gain" value={int(G.c)} unit="m" delta={dl(G)} foot={`${int(G.c / W)} m/sett.`} />}
-        {tab.k === "montagna" ? <Kpi label="Distanza" icon="distance" value={km(D.c, 0)} unit="km" delta={dl(D)} />
+        {swim ? <Kpi label="Passo medio" icon="trend" value={D.c ? paceS(T.c / (D.c / 100)) : "–"} unit="/100 m" />
+          : tab.k === "montagna" ? <Kpi label="Distanza" icon="distance" value={km(D.c, 0)} unit="km" delta={dl(D)} />
           : <Kpi label="Dislivello" icon="gain" value={int(G.c)} unit="m" delta={dl(G)} />}
       </div>
       <p className="note" style={{ marginTop: -12 }}>Variazioni rispetto alle {W} settimane precedenti.</p>
 
-      <Card title={`${metric.name} per settimana`} icon="chart" aside={metric.unit}>
-        {cur.length ? (
-          <>
-            <StackBars cats={weeks.slice(3)} stacks={stacks} line={{ name: "Media 4 sett.", values: avg4 }} fmt={metric.fmt} unit={metric.unit} label={`${metric.name} settimanale`} catLabel={(w) => day(w, { day: "numeric", month: "short" })} highlight={W - 1} />
-            <Legend items={[...stacks.map((s) => ({ label: s.name, color: s.color })), { label: "Media mobile 4 settimane", color: "var(--ink)", line: true, dash: true }]} />
-            <p className="note" style={{ marginTop: 6 }}>Settimane lunedì–domenica, ora locale. In giallo la settimana in corso (incompleta).</p>
-          </>
-        ) : <p className="empty">Nessuna attività di questo tipo nel periodo.</p>}
-      </Card>
+      {sparse && cur.length < 4 ? (
+        <AllTime acts={acts} label={tab.label} swim={swim} />
+      ) : (
+        <>
+          <Card title={`${metric.name} per settimana`} icon="chart" aside={metric.unit}>
+            {cur.length ? (
+              <>
+                <StackBars cats={weeks.slice(3)} stacks={stacks} line={{ name: "Media 4 sett.", values: avg4 }} fmt={metric.fmt} unit={metric.unit} label={`${metric.name} settimanale`} catLabel={(w) => day(w, { day: "numeric", month: "short" })} highlight={W - 1} />
+                <Legend items={[...stacks.map((s) => ({ label: s.name, color: s.color })), { label: "Media mobile 4 settimane", color: "var(--ink)", line: true, dash: true }]} />
+                <p className="note" style={{ marginTop: 6 }}>Settimane lunedì–domenica, ora locale. In giallo la settimana in corso (incompleta).</p>
+              </>
+            ) : <Empty inline icon="chart" title="Nessuna uscita in questo periodo" text="Prova un periodo più lungo." action={{ href: `/analisi?sport=${tab.k}&g=52`, label: "Ultimo anno" }} />}
+          </Card>
 
-      <div className="grid g2">
-        <Card title="Costanza" icon="calendar" aside={`${activeDays} giorni su ${Math.min(W * 7, range(from, today).length)}`}>
-          <Heatmap weeks={heat} label="Minuti di attività per giorno" />
-          <Legend items={[{ label: "riposo", color: "var(--h0)" }, { label: "<30 min", color: "var(--h1)" }, { label: "30–60", color: "var(--h2)" }, { label: "60–105", color: "var(--h3)" }, { label: ">105", color: "var(--h4)" }]} />
-        </Card>
-        {tab.k === "tutte" ? <SportMix cur={cur} /> : tab.k === "corsa" ? <Bests bests={bests} gl={gl} today={today} /> : tab.k === "montagna" ? <TopOutings acts={cur} /> : <SessionList acts={cur} />}
-      </div>
+          <div className="grid g2">
+            <Card title="Costanza" icon="calendar" aside={`${activeDays} giorni su ${Math.min(W * 7, range(from, today).length)}`}>
+              <Heatmap weeks={heat} label="Minuti di attività per giorno" />
+              <Legend items={[{ label: "riposo", color: "var(--h0)" }, { label: "<30 min", color: "var(--h1)" }, { label: "30–60", color: "var(--h2)" }, { label: "60–105", color: "var(--h3)" }, { label: ">105", color: "var(--h4)" }]} />
+            </Card>
+            {tab.k === "tutte" ? <SportMix cur={cur} /> : tab.k === "corsa" ? <Bests bests={bests} gl={gl} today={today} /> : tab.k === "montagna" ? <TopOutings acts={cur} /> : <SessionList acts={cur} swim={swim} />}
+          </div>
+          {sparse && <AllTime acts={acts} label={tab.label} swim={swim} compact />}
+        </>
+      )}
 
       {tab.k === "tutte" && <LoadCard load={load} from={from} today={today} />}
       {tab.k === "corsa" && <EffCard eff={eff} today={today} W={W} />}
@@ -147,7 +160,7 @@ function EffCard({ eff, today, W }: { eff: { day: string; v_mpm: number; hr: num
             series={[{ name: "Corsa", color: "var(--run)", kind: "dots", pts }, ...(trend.length ? [{ name: "Tendenza", color: "var(--ink)", kind: "line" as const, width: 1.6, gapDays: 9999, pts: trend }] : [])]} />
           <Legend items={[{ label: "Una corsa", color: "var(--run)" }, { label: "Tendenza lineare", color: "var(--ink)", line: true }]} />
         </>
-      ) : <p className="empty">Servono almeno 3 corse sopra i 3 km con battito.</p>}
+      ) : <Empty inline icon="trend" title="Servono almeno 3 corse" text="Corse sopra i 3 km con battito registrato." />}
       <p className="note" style={{ marginTop: 6 }}>Metri al minuto per battito (velocità media / FC media), corse oltre i 3 km, ultimi {Math.max(W * 7, 182) >= 365 ? "12" : "6"} mesi. Più alto = più veloce allo stesso battito. Risente di caldo, salite e ripetute: conta la tendenza, non il singolo punto.</p>
     </Card>
   );
@@ -179,18 +192,55 @@ function Bests({ bests, gl, today }: { bests: { id: string; day: string; name: s
 }
 
 function TopOutings({ acts }: { acts: A[] }) {
-  const top = [...acts].sort((a, b) => b.gain - a.gain).slice(0, 6);
+  const top = [...acts].sort((a, b) => b.gain - a.gain).slice(0, 8);
   return (
     <Card title="Uscite con più dislivello" icon="mountain">
-      {top.length ? <table className="t"><tbody>{top.map((a) => <tr key={a.id}><td><Link href={`/attivita/${a.id}`}>{a.name ?? a.place ?? "Uscita"}</Link><div className="note">{day(a.day, { day: "numeric", month: "short", year: "numeric" })}</div></td><td className="r mono">{int(a.gain)} m</td><td className="r mono">{km(a.dist)} km</td><td className="r mono">{hm(a.time)}</td></tr>)}</tbody></table> : <p className="empty">Nessuna uscita nel periodo.</p>}
+      {top.length ? <DataTable caption="Uscite con più dislivello" initial={{ key: "g", dir: "desc" }} pinned={false}
+        cols={[{ key: "n", label: "Uscita", lead: true, sort: true }, { key: "g", label: "D+", r: true, sort: true }, { key: "km", label: "Km", r: true, sort: true }, { key: "t", label: "Tempo", r: true, sort: true }]}
+        rows={top.map((a) => ({ key: a.id, cells: { n: { t: a.name ?? a.place ?? "Uscita", href: `/attivita/${a.id}`, sub: day(a.day, { day: "numeric", month: "short", year: "numeric" }), v: a.day }, g: { t: `${int(a.gain)} m`, v: a.gain }, km: { t: km(a.dist), v: a.dist }, t: { t: hm(a.time), v: a.time } } }))} />
+        : <Empty inline icon="mountain" title="Nessuna uscita nel periodo" />}
     </Card>
   );
 }
 
-function SessionList({ acts }: { acts: A[] }) {
+function sessionRows(acts: A[], swim: boolean) {
+  return acts.map((a) => ({ key: a.id, cells: {
+    n: { t: a.name ?? "Uscita", href: `/attivita/${a.id}`, sub: day(a.day, { day: "numeric", month: "short", year: "numeric" }), v: a.day },
+    d: { t: a.dist ? (swim ? `${int(a.dist)} m` : `${km(a.dist, a.dist < 5000 ? 2 : 1)} km`) : "–", v: a.dist || null },
+    t: { t: hm(a.time), v: a.time },
+    p: { t: a.dist && a.time ? (swim ? paceS(a.time / (a.dist / 100)) : dec((a.dist / a.time) * 3.6)) : "–", v: a.dist && a.time ? (swim ? a.time / (a.dist / 100) : a.dist / a.time) : null },
+    hr: { t: a.hr ? int(a.hr) : "–", v: a.hr },
+  } }));
+}
+const SESSION_COLS = (swim: boolean) => [{ key: "n", label: "Uscita", lead: true, sort: true }, { key: "d", label: "Distanza", r: true, sort: true }, { key: "t", label: "Tempo", r: true, sort: true }, { key: "p", label: swim ? "Passo /100 m" : "Km/h", r: true, sort: true }, { key: "hr", label: "FC", r: true, sort: true }];
+
+function SessionList({ acts, swim }: { acts: A[]; swim: boolean }) {
   return (
     <Card title="Uscite del periodo" icon="activity">
-      {acts.length ? <table className="t"><tbody>{[...acts].reverse().slice(0, 8).map((a) => <tr key={a.id}><td><Link href={`/attivita/${a.id}`}>{a.name ?? "Uscita"}</Link><div className="note">{day(a.day)}</div></td><td className="r mono">{a.dist ? `${km(a.dist, a.dist < 5000 ? 2 : 1)} km` : "–"}</td><td className="r mono">{hm(a.time)}</td></tr>)}</tbody></table> : <p className="empty">Nessuna uscita nel periodo.</p>}
+      {acts.length ? <DataTable caption="Uscite del periodo" cols={SESSION_COLS(swim)} rows={sessionRows([...acts].reverse().slice(0, 12), swim)} />
+        : <Empty inline icon="activity" title="Nessuna uscita nel periodo" />}
+    </Card>
+  );
+}
+
+/** Discipline con poche uscite: riepilogo di tutto lo storico, solo con le metriche pertinenti. */
+function AllTime({ acts, label, swim, compact = false }: { acts: A[]; label: string; swim: boolean; compact?: boolean }) {
+  if (!acts.length) return <div className="card"><Empty icon="activity" title={`Nessuna uscita di ${label.toLowerCase()}`} text="Compariranno qui quando ne registrerai una con Garmin o Strava." /></div>;
+  const sorted = [...acts].sort((a, b) => (a.day < b.day ? 1 : -1));
+  const dist = acts.reduce((s, a) => s + a.dist, 0), time = acts.reduce((s, a) => s + a.time, 0);
+  const withHr = acts.filter((a) => isNum(a.hr));
+  return (
+    <Card title={compact ? `${label}: tutto lo storico` : `${label}: tutto lo storico`} icon="clock" aside={`dal ${day(sorted[sorted.length - 1].day, { month: "short", year: "numeric" })}`}>
+      {!compact && <p className="note" style={{ marginBottom: 10 }}>Poche uscite nel periodo scelto: qui sotto c&apos;è tutto lo storico, con le sole misure pertinenti alla disciplina.</p>}
+      <div className="kpis" style={{ marginBottom: 12 }}>
+        <Kpi label="Uscite" icon="activity" value={String(acts.length)} foot={`ultima ${day(sorted[0].day, { day: "numeric", month: "short", year: "numeric" })}`} />
+        <Kpi label="Distanza totale" icon="distance" value={swim ? int(dist) : km(dist, 0)} unit={swim ? "m" : "km"} />
+        <Kpi label="Tempo totale" icon="clock" value={hm(time)} />
+        {swim ? <Kpi label="Passo medio" icon="trend" value={dist ? paceS(time / (dist / 100)) : "–"} unit="/100 m" />
+          : <Kpi label="Battito medio" icon="heart" value={withHr.length ? int(withHr.reduce((s, a) => s + a.hr!, 0) / withHr.length) : "–"} unit={withHr.length ? "bpm" : undefined} foot={withHr.length ? `${withHr.length} uscite con FC` : "nessuna uscita con FC"} />}
+      </div>
+      <DataTable caption={`Tutte le uscite: ${label}`} cols={SESSION_COLS(swim)} rows={sessionRows(sorted.slice(0, 20), swim)} />
+      {swim && <p className="note" style={{ marginTop: 8 }}>Passo per 100 m sul tempo in movimento; in piscina le pause tra le vasche possono allungarlo. Bracciate, vasche e SWOLF sono nel dettaglio di ogni uscita quando le registra Garmin.</p>}
     </Card>
   );
 }
@@ -198,11 +248,13 @@ function SessionList({ acts }: { acts: A[] }) {
 function Places({ acts }: { acts: A[] }) {
   const by = new Map<string, { n: number; gain: number }>();
   for (const a of acts) if (a.place) { const x = by.get(a.place) ?? { n: 0, gain: 0 }; x.n++; x.gain += a.gain; by.set(a.place, x); }
-  const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 8);
+  const rows = [...by.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 10);
   if (!rows.length) return null;
   return (
     <Card title="Luoghi" icon="map" aside="nome del luogo da Garmin">
-      <table className="t"><thead><tr><th>Luogo</th><th className="r">Uscite</th><th className="r">D+ totale</th></tr></thead><tbody>{rows.map(([p, v]) => <tr key={p}><td>{p}</td><td className="r mono">{v.n}</td><td className="r mono">{int(v.gain)} m</td></tr>)}</tbody></table>
+      <DataTable caption="Luoghi delle uscite" initial={{ key: "n", dir: "desc" }} pinned={false}
+        cols={[{ key: "p", label: "Luogo", lead: true, sort: true }, { key: "n", label: "Uscite", r: true, sort: true }, { key: "g", label: "D+ totale", r: true, sort: true }]}
+        rows={rows.map(([p, v]) => ({ key: p, cells: { p: { t: p }, n: { t: String(v.n), v: v.n }, g: { t: `${int(v.gain)} m`, v: v.gain } } }))} />
     </Card>
   );
 }

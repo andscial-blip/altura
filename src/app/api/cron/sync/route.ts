@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { syncAll } from "@/lib/sync";
+import { invalidate } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -11,5 +12,7 @@ export async function GET(req: NextRequest) {
   const got = req.headers.get("authorization") ?? "";
   const ok = !!want && got.length === want.length + 7 && timingSafeEqual(Buffer.from(got), Buffer.from(`Bearer ${want}`));
   if (!ok) return NextResponse.json({ error: "non autorizzato" }, { status: 401 });
-  return NextResponse.json(await syncAll({ budgetMs: 50_000 }));
+  const res = await syncAll({ budgetMs: 50_000 });
+  invalidate();
+  return NextResponse.json(res);
 }

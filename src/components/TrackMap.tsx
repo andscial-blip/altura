@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { Empty } from "@/components/Head";
 
 /**
  * Mappa con tre fondi: Mappa (OpenFreeMap, senza chiave), Satellite (MapTiler, solo se è impostata la chiave pubblica
@@ -66,7 +67,7 @@ export function TrackMap({ lines, heat = false, tall = false, color }: { lines: 
         });
         map.on("error", (e) => {
           const m = String(e.error?.message ?? "");
-          if (m.includes("Failed to fetch") || m.includes("403")) setErr("Uno sfondo della mappa non è raggiungibile in questo momento.");
+          if (m.includes("Failed to fetch") || m.includes("403") || m.includes("401")) setErr(m.includes("maptiler") || m.includes("403") || m.includes("401") ? "Il satellite non risponde (chiave o limite mensile MapTiler): usa Mappa o Rilievo." : "Uno sfondo della mappa non è raggiungibile: controlla la connessione.");
         });
       } catch { setErr("La mappa non si è caricata."); }
     })();
@@ -80,14 +81,14 @@ export function TrackMap({ lines, heat = false, tall = false, color }: { lines: 
     if (map.getLayer("casing")) map.setPaintProperty("casing", "line-opacity", layer === "map" ? 0.9 : 1);
   }, [layer]);
 
-  if (!lines.length) return <p className="empty">Nessun tracciato GPS per questa attività.</p>;
+  if (!lines.length) return <Empty inline icon="map" title="Nessun tracciato GPS" text="Questa uscita è stata registrata senza GPS, oppure il file con il percorso non è ancora arrivato." />;
   return (
     <div style={{ position: "relative" }}>
-      {err && <p className="note">{err}</p>}
-      <div ref={ref} className={`map${tall ? " tall" : ""}`} role="region" aria-label={heat ? "Mappa di calore dei tracciati" : "Mappa del percorso"} />
+            <div ref={ref} className={`map${tall ? " tall" : ""}`} role="region" aria-label={heat ? "Mappa di calore dei tracciati" : "Mappa del percorso"} />
       <div className="maplayer seg inline" role="group" aria-label="Sfondo della mappa">
         {layers.map((l) => <button key={l.k} type="button" aria-pressed={layer === l.k} onClick={() => setLayer(l.k)}>{l.label}</button>)}
       </div>
+      {err && <p className="mapnote" role="status">{err}</p>}
     </div>
   );
 }

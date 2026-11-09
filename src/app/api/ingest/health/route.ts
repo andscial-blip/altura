@@ -1,3 +1,4 @@
+import { invalidate } from "@/lib/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { one, q, tx } from "@/lib/db";
 import type { HealthPayload as HP } from "@/lib/apple";
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
     await q("update sport.ingest_tokens set last_used_at = now() where id = $1", [row.id]);
     await finishRun(runId, "ok", counts);
     if (warnings.length) await q("update sport.sync_runs set message = $2 where id = $1", [runId, warnings.slice(0, 5).join("; ")]);
+    invalidate();
     return NextResponse.json({ ok: true, ...counts, giorni_per_metrica: perMetric, avvisi: warnings });
   } catch (e) {
     await finishRun(runId, "error", counts, sanitize(e));

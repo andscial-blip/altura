@@ -27,6 +27,7 @@ type State = {
   last_activity_start?: string;   // inizio dell'attività più recente già vista (UTC ISO)
   backfill_before?: string | null; // per lo storico: data (YYYY-MM-DD) fino a cui si è già scesi
   history_from?: string | null;    // data da cui importare lo storico (scelta in Impostazioni)
+  daily_back_before?: string;      // metriche giornaliere: importate fino a questa data (all'indietro)
   fit_pending?: { id: string; tries: number }[];
   daily_until?: string;
 };
@@ -172,9 +173,7 @@ export async function syncGarmin(opts: { budgetMs?: number; backfillDays?: numbe
     // 2) metriche giornaliere
     const dEnd = now;
     const dStart = st.daily_until ? new Date(Date.parse(st.daily_until) - DAILY_INCR_DAYS * 86400_000) : new Date(now.getTime() - DAILY_FIRST_DAYS * 86400_000);
-    for (let a = new Date(dStart); a <= dEnd; a = new Date(a.getTime() + DAILY_CHUNK * 86400_000)) {
-      const b = new Date(Math.min(a.getTime() + (DAILY_CHUNK - 1) * 86400_000, dEnd.getTime()));
-      const s = isoDay(a), e = isoDay(b);
+    const dailyBlock = async (s: string, e: string) => {
       const payloads: Record<string, unknown> = {};
       const calls: [string, () => Promise<unknown>][] = [
         ["summary", () => c.json("/usersummary-service/v2/dailysummaries", { startDate: s, endDate: e })],
@@ -190,9 +189,27 @@ export async function syncGarmin(opts: { budgetMs?: number; backfillDays?: numbe
         }
       }
       counts.daily_rows += await upsertDaily(dailyRows(payloads));
+    };
+    for (let a = new Date(dStart); a <= dEnd; a = new Date(a.getTime() + DAILY_CHUNK * 86400_000)) {
+      const b = new Date(Math.min(a.getTime() + (DAILY_CHUNK - 1) * 86400_000, dEnd.getTime()));
+      const e = isoDay(b);
+      await dailyBlock(isoDay(a), e);
       st.daily_until = e;
       await setState("garmin", st);
     }
+
+    // 2b) storico delle metriche giornaliere (sonno, variabilità, battito a riposo…): blocchi di 28 giorni all'indietro
+    if (st.history_from && !st.daily_back_before) st.daily_back_before = isoDay(new Date(now.getTime() - DAILY_FIRST_DAYS * 86400_000));
+    let dailyBackMoved = false;
+    while (st.history_from && st.daily_back_before && st.daily_back_before > st.history_from && Date.now() < deadline - 15_000) {
+      const end = new Date(Date.parse(st.daily_back_before + "T00:00:00Z") - 86400_000);
+      const start = new Date(Math.max(Date.parse(st.history_from + "T00:00:00Z"), end.getTime() - (DAILY_CHUNK - 1) * 86400_000));
+      await dailyBlock(isoDay(start), isoDay(end));
+      st.daily_back_before = isoDay(start);
+      dailyBackMoved = true;
+      await setState("garmin", st);
+    }
+    if (dailyBackMoved) info.push(st.daily_back_before && st.history_from && st.daily_back_before > st.history_from ? `metriche storiche fino al ${st.daily_back_before}` : "metriche storiche complete");
 
     // 3) file FIT originali (tracciato, altimetria, giri), finché c'è tempo
     const queue = (st.fit_pending ?? []).filter((p) => p.tries < 5);
@@ -246,9 +263,9 @@ export async function setGarminHistory(from: string | null): Promise<void> {
   await setState("garmin", st);
 }
 
-export async function garminHistoryState(): Promise<{ history_from: string | null; backfill_before: string | null; fit_pending: number }> {
+export async function garminHistoryState(): Promise<{ history_from: string | null; backfill_before: string | null; daily_back_before: string | null; fit_pending: number }> {
   const st = (await getState<State>("garmin")) as State;
-  return { history_from: st.history_from ?? null, backfill_before: st.backfill_before ?? null, fit_pending: (st.fit_pending ?? []).filter((p) => p.tries < 5).length };
+  return { history_from: st.history_from ?? null, backfill_before: st.backfill_before ?? null, daily_back_before: st.daily_back_before ?? null, fit_pending: (st.fit_pending ?? []).filter((p) => p.tries < 5).length };
 }
 
 export function garminConfigured(): boolean {

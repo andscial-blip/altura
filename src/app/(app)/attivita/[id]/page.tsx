@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { activity, similar } from "@/lib/queries";
 import { publicTrack } from "@/lib/track";
-import { dec, dur, int, km, pace, paceS, sportLabel, when, SOURCE_LABEL } from "@/lib/fmt";
+import { dec, dur, hm, int, km, pace, paceS, sportLabel, when, SOURCE_LABEL } from "@/lib/fmt";
 import { ACTIVITY_FIELDS, mergeNorms, type Norm, type SourceId } from "@/lib/model";
 import { compare, type Step } from "@/lib/runna-parse";
 import { isNum, rolling, splitsFromStreams, type Split } from "@/lib/stats";
 import { Profiles, Zones } from "@/components/charts";
 import { Card, Head, Kpi } from "@/components/Head";
+import { DataTable } from "@/components/DataTable";
 import { SPORT_COLOR, StructBar } from "@/components/Act";
 import { Icon, SportIcon, sportMeta } from "@/components/Icon";
 import { TrackMap } from "@/components/TrackMap";
@@ -32,6 +33,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const track = await publicTrack(s.lat ?? [], s.lon ?? []);
   const isRun = ["run", "trail_run", "treadmill"].includes(a.sport);
   const foot = ON_FOOT.includes(a.sport);
+  const swim = a.sport === "swim";
   const t = Number(a.moving_s ?? a.elapsed_s ?? 0), dist = Number(a.distance_m ?? 0);
   const { field_source } = mergeNorms(sources.map((x) => ({ source: x.source as SourceId, norm: x.norm as Norm })));
   const garmin = sources.find((x) => x.source === "garmin");
@@ -39,6 +41,12 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const sum = (garmin?.summary ?? {}) as Record<string, unknown>;
   const place = typeof sum.locationName === "string" ? sum.locationName : null;
   const runna = sources.find((x) => x.source === "runna")?.runna as { steps?: Step[]; segments?: [number, number][] } | null | undefined;
+  const KIND: Record<string, string> = { warm: "Riscaldamento", cool: "Defaticamento", work: "Lavoro", rest: "Recupero", easy: "Facile", float: "Costante" };
+  const stepsSrc = (runna?.steps ?? (planned?.structure?.steps as Step[] | undefined) ?? []) as Step[];
+  const blocks = stepsSrc.map((b) => ({ label: KIND[b.kind] ?? b.kind, m: b.m ?? null, s: b.s ?? null, pace: b.pace ?? null, limit: b.limit ?? null, est: b.m ? (b.m / 1000) * (b.pace ?? b.limit ?? 330) : null }));
+  const runnaPlanKm = stepsSrc.reduce((a, b) => a + (b.m ?? 0), 0) / 1000 || null;
+  const segPaces = (runna?.segments ?? []).filter((x) => x[0] >= 900).map((x) => x[1] / (x[0] / 1000)).sort((a, b) => a - b);
+  const segMed = segPaces.length ? segPaces[Math.floor(segPaces.length / 2)] : 0;
   const cmp = runna?.steps && runna.segments ? compare(runna.steps, runna.segments, planned?.km ? Number(planned.km) : null, planned ? [planned.duration_min_s, planned.duration_max_s] : null, dist ? dist / 1000 : null, t || null) : null;
 
   // parziali al km: dalle serie se ci sono, altrimenti dai giri del dispositivo
@@ -70,6 +78,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (isNum(sum.minTemperature) && isNum(sum.maxTemperature)) tech.push(["Temperatura (sensore orologio)", `${int(sum.minTemperature)}–${int(sum.maxTemperature)} °C`]);
   if (isNum(sum.calories)) tech.push(["Calorie (stima Garmin)", `${int(sum.calories)} kcal`]);
   if (a.elapsed_s && a.moving_s && Number(a.elapsed_s) - Number(a.moving_s) > 30) tech.push(["Tempo totale con soste", dur(a.elapsed_s)]);
+  if (swim) {
+    const ty = (sum.activityType as { typeKey?: string } | undefined)?.typeKey;
+    if (ty) tech.unshift(["Tipo", ty === "open_water_swimming" ? "acque libere" : ty === "lap_swimming" ? "piscina" : ty]);
+    if (isNum(sum.poolLength)) tech.push(["Lunghezza vasca", `${int(sum.poolLength)} m`]);
+    if (isNum(sum.activeLengths)) tech.push(["Vasche", int(sum.activeLengths)]);
+    if (isNum(sum.strokes)) tech.push(["Bracciate", int(sum.strokes)]);
+    if (isNum(sum.averageSwimCadenceInStrokesPerMinute)) tech.push(["Frequenza di bracciata", `${int(sum.averageSwimCadenceInStrokesPerMinute)} al minuto`]);
+    if (isNum(sum.averageSwolf)) tech.push(["SWOLF medio", `${int(sum.averageSwolf)} (bracciate + secondi per vasca)`]);
+  }
 
   return (
     <div className="stack-l">
@@ -79,9 +96,9 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         acts={<div className="row" style={{ gap: 10 }}>{sources.map((x) => <span key={x.source} className="src" data-s={x.source}><i />{SOURCE_LABEL[x.source]}</span>)}</div>} />
 
       <div className="kpis">
-        <Kpi label="Distanza" icon="distance" value={dist ? km(dist, 2) : "–"} unit="km" />
+        <Kpi label="Distanza" icon="distance" value={dist ? (swim ? int(dist) : km(dist, 2)) : "–"} unit={swim ? "m" : "km"} />
         <Kpi label="Tempo" icon="clock" value={dur(t)} />
-        <Kpi label={foot ? "Passo medio" : "Velocità media"} icon="trend" value={dist && t ? (foot ? pace(dist, t) : dec((dist / t) * 3.6)) : "–"} unit={foot ? "/km" : "km/h"} />
+        <Kpi label={foot || swim ? "Passo medio" : "Velocità media"} icon="trend" value={dist && t ? (swim ? paceS(t / (dist / 100)) : foot ? pace(dist, t) : dec((dist / t) * 3.6)) : "–"} unit={swim ? "/100 m" : foot ? "/km" : "km/h"} />
         <Kpi label={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "Dislivello" : "Battito medio"} icon={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "gain" : "heart"}
           value={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? int(a.elev_gain_m) : int(a.avg_hr)} unit={Number(a.elev_gain_m ?? 0) > 30 || !a.avg_hr ? "m" : "bpm"}
           foot={a.avg_hr && Number(a.elev_gain_m ?? 0) > 30 ? `FC ${int(a.avg_hr)}/${int(a.max_hr)}` : a.training_load ? `carico ${int(a.training_load)}` : undefined} />
@@ -105,11 +122,12 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <Card title="Parziali" icon="clock" aside={splitSrc === "serie" ? "al chilometro" : "giri del dispositivo"}>
             <div className="tscroll">
               <table className="t">
+                <caption className="sr">Parziali</caption>
                 <thead><tr><th>{splitSrc === "serie" ? "Km" : "Giro"}</th><th className="r">Passo</th><th style={{ width: "40%" }}><span className="sr">confronto</span></th><th className="r">FC</th><th className="r">D+</th></tr></thead>
                 <tbody>{splits.map((x) => (
                   <tr key={x.km}>
                     <td className="mono">{x.dist_m < 990 ? `${dec(x.dist_m / 1000, 2)}` : x.km}</td>
-                    <td className="r mono" style={{ fontWeight: best === x ? 700 : undefined }}>{paceS(x.pace_s)}</td>
+                    <td className="r mono" style={{ fontWeight: best === x ? 700 : undefined }}>{paceS(x.pace_s)}{best === x && <span className="sr"> (parziale migliore)</span>}</td>
                     <td><div className="pbar"><i style={{ width: `${pMax > pMin ? 30 + (70 * (pMax - x.pace_s)) / (pMax - pMin) : 100}%`, background: best === x ? "var(--sun)" : color }} /></div></td>
                     <td className="r mono">{x.hr ? int(x.hr) : "–"}</td>
                     <td className="r mono">{int(x.gain_m)}</td>
@@ -128,47 +146,72 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         )}
       </div>
 
-      {planned && (
-        <Card title={`Seduta Runna: ${planned.title}`} icon="calendar">
-          <StructBar steps={planned.structure?.steps} />
-          {cmp ? (
-            <div className="stack" style={{ marginTop: 12 }}>
-              <p>Esito: <b>{String(cmp.verdict)}</b>{typeof cmp.km_diff_pct === "number" ? `, distanza ${cmp.km_diff_pct > 0 ? "+" : ""}${dec(cmp.km_diff_pct)}% rispetto al previsto` : ""}.</p>
-              {cmp.work.length > 0 && (
-                <div className="tscroll"><table className="t">
-                  <thead><tr><th>Ripetuta</th><th className="r">Metri</th><th className="r">Passo</th><th className="r">Obiettivo</th><th>Esito</th></tr></thead>
-                  <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1}</td><td className="r mono">{w.m}</td><td className="r mono">{paceS(w.pace)}</td><td className="r mono">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`badge ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
-                </table></div>
-              )}
-              <p className="note">Metodo: i passi prescritti da Runna confrontati in ordine con i segmenti registrati da Runna; tolleranza 3 s/km oltre la forbice (5 s/km senza forbice). {cmp.notes.join(" ")}</p>
-            </div>
-          ) : <p className="note" style={{ marginTop: 10 }}>Seduta abbinata; i segmenti Runna non sono disponibili per il confronto ripetuta per ripetuta.</p>}
+      {(planned || runna?.steps) && (
+        <Card title={`Seduta Runna${planned ? `: ${planned.title}` : ""}`} icon="calendar" aside="previsto e registrato">
+          <div className="stack">
+            <dl className="kv" style={{ maxWidth: 560 }}>
+              <dt>Distanza prevista · effettiva</dt><dd className="mono">{planned?.km ? `${dec(planned.km)} km` : runnaPlanKm ? `${dec(runnaPlanKm)} km` : "non indicata"} · {km(dist, 2)} km</dd>
+              <dt>Durata prevista (Runna) · effettiva</dt><dd className="mono">{planned?.duration_min_s ? `${hm(planned.duration_min_s)}–${hm(planned.duration_max_s)}` : "non indicata"} · {dur(t)}</dd>
+            </dl>
+            {blocks.length > 0 && (
+              <>
+                <div>
+                  <p className="note" style={{ marginBottom: 4 }}>Previsto: blocchi in proporzione alla durata stimata (distanza × passo obiettivo)</p>
+                  <StructBar steps={runna?.steps ?? planned?.structure?.steps} />
+                </div>
+                {runna?.segments?.length ? (
+                  <div>
+                    <p className="note" style={{ marginBottom: 4 }}>Registrato da Runna: un blocco per parziale, largo quanto la sua durata reale</p>
+                    <div className="struct rec" role="img" aria-label={`Registrato: ${runna.segments.length} parziali, ${dur(runna.segments.reduce((a, x) => a + x[1], 0))}`}>
+                      {runna.segments.map((x, i) => <span key={i} className={x[0] >= 900 && x[1] / (x[0] / 1000) < segMed ? "f" : undefined} style={{ flex: `${x[1]} 0 0`, height: "100%" }} />)}
+                    </div>
+                    <p className="note" style={{ marginTop: 4 }}>Blocchi pieni: parziali più veloci della mediana della seduta.</p>
+                  </div>
+                ) : null}
+                <div className="tscroll">
+                  <table className="t">
+                    <caption className="sr">Blocchi previsti della seduta</caption>
+                    <thead><tr><th scope="col">Blocco</th><th scope="col" className="r">Distanza prevista</th><th scope="col" className="r">Passo obiettivo</th><th scope="col" className="r">Durata stimata</th></tr></thead>
+                    <tbody>{blocks.map((b, i) => <tr key={i}><td>{b.label}</td><td className="r mono">{b.m ? (b.m >= 1000 ? `${dec(b.m / 1000, b.m % 1000 ? 1 : 0)} km` : `${b.m} m`) : "–"}</td><td className="r mono">{b.pace ? `${paceS(b.pace)} /km` : b.limit ? `oltre ${paceS(b.limit)} /km` : "libero"}</td><td className="r mono">{b.s ? dur(b.s) : b.est ? `≈ ${dur(b.est)}` : "–"}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {cmp ? (
+              <>
+                <p>Esito: <b>{String(cmp.verdict)}</b>{typeof cmp.km_diff_pct === "number" ? `, distanza ${cmp.km_diff_pct > 0 ? "+" : ""}${dec(cmp.km_diff_pct)}% rispetto al previsto` : ""}.</p>
+                {cmp.work.length > 0 && (
+                  <div className="tscroll"><table className="t">
+                    <caption className="sr">Ripetute: passo registrato e obiettivo</caption>
+                    <thead><tr><th scope="col">Ripetuta</th><th scope="col" className="r">Metri</th><th scope="col" className="r">Passo registrato</th><th scope="col" className="r">Obiettivo</th><th scope="col">Esito</th></tr></thead>
+                    <tbody>{cmp.work.map((w, i) => <tr key={i}><td>{i + 1}</td><td className="r mono">{w.m}</td><td className="r mono">{paceS(w.pace)}</td><td className="r mono">{paceS(w.lo)}–{paceS(w.hi)}</td><td><span className={`badge ${w.ok ? "ok" : "warn"}`}>{w.ok ? "nel ritmo" : w.fast ? "più veloce" : "più lenta"}</span></td></tr>)}</tbody>
+                  </table></div>
+                )}
+              </>
+            ) : null}
+            <p className="note">Runna indica distanza, passo obiettivo e (non sempre) durata di ogni blocco: dove manca, la durata è stimata come distanza × passo obiettivo (segnata ≈) o con 5:30/km per i blocchi a passo libero. Il registrato viene dai parziali che Runna salva con l&apos;uscita.{cmp ? ` Confronto: tolleranza 3 s/km oltre la forbice (5 s/km senza forbice). ${cmp.notes.join(" ")}` : ""}</p>
+          </div>
         </Card>
       )}
 
       {sim.length > 0 && myPace && (
-        <Card title="Uscite simili" icon="trend" aside={`${sportLabel(a.sport)}, ${km(dist * 0.8, 0)}–${km(dist * 1.2, 0)} km`}>
-          <div className="tscroll">
-            <table className="t">
-              <thead><tr><th>Data</th><th className="r">Km</th><th className="r">{foot ? "Passo" : "Tempo"}</th><th className="r">FC</th><th className="r">D+</th></tr></thead>
-              <tbody>
-                <tr style={{ background: "var(--surface-2)" }}><td><b>Questa</b></td><td className="r mono">{km(dist)}</td><td className="r mono">{foot ? paceS(myPace) : dur(t)}</td><td className="r mono">{int(a.avg_hr)}</td><td className="r mono">{int(a.elev_gain_m)}</td></tr>
-                {sim.map((x) => {
-                  const p = x.time / (x.dist / 1000), dd = p - myPace;
-                  return (
-                    <tr key={x.id}>
-                      <td><Link href={`/attivita/${x.id}`}>{x.name ?? x.day}</Link><div className="note">{x.day.split("-").reverse().join("/")}</div></td>
-                      <td className="r mono">{km(x.dist)}</td>
-                      <td className="r mono">{foot ? paceS(p) : dur(x.time)}{foot && <div className={Math.abs(dd) < 2 ? "ne" : dd > 0 ? "up" : "dn"} style={{ fontSize: "0.6875rem" }}>{Math.abs(dd) < 2 ? "uguale" : `${dd > 0 ? "+" : "−"}${int(Math.abs(dd))} s`}</div>}</td>
-                      <td className="r mono">{x.hr ? int(x.hr) : "–"}</td>
-                      <td className="r mono">{x.gain ? int(x.gain) : "–"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="note" style={{ marginTop: 8 }}>Stesso sport, distanza entro ±20%, le 8 più recenti. Sotto il passo: differenza rispetto a questa uscita (+ = quella era più lenta). Il passo dipende anche da dislivello e tipo di seduta: confronta guardando FC e D+.</p>
+        <Card title="Uscite simili" icon="trend" aside={`${sportLabel(a.sport)}, ${swim ? `${int(dist * 0.8)}–${int(dist * 1.2)} m` : `${km(dist * 0.8, 0)}–${km(dist * 1.2, 0)} km`}`}>
+          <DataTable caption="Uscite simili a questa" initial={undefined}
+            cols={[{ key: "n", label: "Uscita", lead: true, sort: true }, { key: "km", label: swim ? "Metri" : "Km", r: true, sort: true }, { key: "p", label: foot ? "Passo" : swim ? "Passo /100 m" : "Tempo", r: true, sort: true }, { key: "hr", label: "FC", r: true, sort: true }, { key: "g", label: "D+", r: true, sort: true }]}
+            rows={[
+              { key: "this", hl: true, cells: { n: { t: "Questa uscita", v: "0" }, km: { t: swim ? int(dist) : km(dist), v: dist }, p: { t: foot ? paceS(myPace) : swim ? paceS(t / (dist / 100)) : dur(t), v: foot ? myPace : t }, hr: { t: a.avg_hr ? int(a.avg_hr) : "–", v: a.avg_hr ? Number(a.avg_hr) : null }, g: { t: a.elev_gain_m ? int(a.elev_gain_m) : "–", v: a.elev_gain_m ? Number(a.elev_gain_m) : null } } },
+              ...sim.map((x) => {
+                const p = x.time / (x.dist / 1000), dd = p - myPace;
+                return { key: x.id, cells: {
+                  n: { t: x.name ?? "Uscita", href: `/attivita/${x.id}`, sub: x.day.split("-").reverse().join("/"), v: x.day },
+                  km: { t: swim ? int(x.dist) : km(x.dist), v: x.dist },
+                  p: { t: foot ? paceS(p) : swim ? paceS(x.time / (x.dist / 100)) : dur(x.time), v: foot ? p : x.time, sub: foot ? (Math.abs(dd) < 2 ? "come questa" : `${dd > 0 ? "+" : "−"}${int(Math.abs(dd))} s/km`) : undefined },
+                  hr: { t: x.hr ? int(x.hr) : "–", v: x.hr },
+                  g: { t: x.gain ? int(x.gain) : "–", v: x.gain },
+                } };
+              }),
+            ]} />
+          <p className="note" style={{ marginTop: 8 }}>Stesso sport, distanza entro ±20%, le 8 più recenti. Sotto il passo: differenza rispetto a questa uscita (+ = quella era più lenta). Il passo dipende anche da dislivello e tipo di seduta: confronta guardando FC e D+. Tocca un&apos;intestazione per ordinare.</p>
         </Card>
       )}
 
