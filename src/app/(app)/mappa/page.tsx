@@ -20,8 +20,8 @@ const FAM: Record<string, { label: string; icon: string; sports: string[] }> = {
 /** Tracciati per la vista d'insieme: 120 punti ciascuno, 4 decimali (~10 m), zone private tolte. Calcolati una volta e messi in cache. */
 const mapData = cached("mapData", async (g: number, sports: string[]) => {
   const rows = await q<{ lat: (number | null)[]; lon: (number | null)[]; place: string | null }>(
-    `select array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 240)) i) as lat,
-            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 240)) i) as lon,
+    `select array(select v::float8 from jsonb_array_elements_text(t.streams->'lat') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 240) = 0 order by i) as lat,
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lon') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 240) = 0 order by i) as lon,
             (select x.raw->'summary'->>'locationName' from sport.activity_sources x where x.activity_id = a.id and x.source = 'garmin') as place
        from sport.activity_streams t join sport.activities a on a.id = t.activity_id
       where not a.hidden and t.start_lat is not null and a.start_utc > now() - make_interval(days => $1) and (cardinality($2::text[]) = 0 or a.sport = any($2))

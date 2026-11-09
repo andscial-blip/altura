@@ -25,8 +25,8 @@ async function thumbs_(ids: string[]): Promise<Record<string, string>> {
   const { q } = await import("@/lib/db");
   const rows = await q<{ id: string; lat: (number | null)[]; lon: (number | null)[] }>(
     `select t.activity_id as id,
-            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 80)) i) as lat,
-            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 80)) i) as lon
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lat') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 80) = 0 order by i) as lat,
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lon') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 80) = 0 order by i) as lon
        from sport.activity_streams t where t.activity_id = any($1::uuid[]) and t.start_lat is not null`, [ids]);
   const out: Record<string, string> = {};
   const zones = await privateZones();

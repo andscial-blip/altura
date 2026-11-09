@@ -14,9 +14,9 @@ function pool(): Pool {
     if (!url) throw new Error("DATABASE_URL mancante");
     g.__alturaPool = new Pool({
       connectionString: url,
-      max: 3,
+      max: 8,
       idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 8_000,
+      connectionTimeoutMillis: 15_000,
       // Supabase richiede TLS; il database locale dei test d'integrazione no (sslmode=disable nell'URL)
       ssl: /sslmode=disable/.test(url) ? false : { rejectUnauthorized: false },
     });

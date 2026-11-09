@@ -219,8 +219,8 @@ async function results_() {
 async function routeGroups_() {
   const rows = await q<{ id: string; dist: number; lat: (number | null)[]; lon: (number | null)[] }>(
     `select a.id, a.distance_m::float8 as dist,
-            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lat,
-            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lon
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lat') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 150) = 0 order by i) as lat,
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lon') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 150) = 0 order by i) as lon
        from sport.activities a join sport.activity_streams t on t.activity_id = a.id
       where not a.hidden and a.sport in ('run','trail_run') and t.start_lat is not null and a.distance_m > 1000
       order by a.start_utc desc`);
@@ -234,8 +234,8 @@ async function sameRouteIds_(id: string) {
   const rows = await q<{ id: string; dist: number; lat: (number | null)[]; lon: (number | null)[] }>(
     `with me as (select a.distance_m, t.start_lat, t.start_lon from sport.activities a join sport.activity_streams t on t.activity_id = a.id where a.id = $1 and t.start_lat is not null)
      select a.id, a.distance_m::float8 as dist,
-            array(select (t.streams->'lat'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lat,
-            array(select (t.streams->'lon'->>i)::float8 from generate_series(0, t.n_points - 1, greatest(1, t.n_points / 150)) i) as lon
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lat') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 150) = 0 order by i) as lat,
+            array(select v::float8 from jsonb_array_elements_text(t.streams->'lon') with ordinality e(v, i) where (i - 1) % greatest(1, t.n_points / 150) = 0 order by i) as lon
        from sport.activities a join sport.activity_streams t on t.activity_id = a.id, me
       where not a.hidden and a.sport in ('run','trail_run') and t.start_lat is not null
         and abs(t.start_lat - me.start_lat) < 0.02 and abs(t.start_lon - me.start_lon) < 0.02
@@ -288,9 +288,9 @@ async function zoneRows_(from: string) {
  */
 async function mountainCurve_() {
   const rows = await q<{ id: string; dist: (number | null)[]; alt: (number | null)[]; t: (number | null)[] }>(
-    `select a.id, array(select (st.streams->'dist'->>i)::float8 from generate_series(0, st.n_points - 1) i) as dist,
-            array(select (st.streams->'alt'->>i)::float8 from generate_series(0, st.n_points - 1) i) as alt,
-            array(select (st.streams->'t'->>i)::float8 from generate_series(0, st.n_points - 1) i) as t
+    `select a.id, array(select v::float8 from jsonb_array_elements_text(st.streams->'dist') with ordinality e(v, i) where (i - 1) % greatest(1, st.n_points / 1500) = 0 order by i) as dist,
+            array(select v::float8 from jsonb_array_elements_text(st.streams->'alt') with ordinality e(v, i) where (i - 1) % greatest(1, st.n_points / 1500) = 0 order by i) as alt,
+            array(select v::float8 from jsonb_array_elements_text(st.streams->'t') with ordinality e(v, i) where (i - 1) % greatest(1, st.n_points / 1500) = 0 order by i) as t
        from sport.activities a join sport.activity_streams st on st.activity_id = a.id
       where not a.hidden and a.sport in ('hike','walk','trail_run') and st.streams ? 'alt' and st.streams ? 'dist' and st.streams ? 't'`);
   const { byDistance, speedCurve, climbs } = await import("@/lib/mountain");
