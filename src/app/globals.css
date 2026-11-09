@@ -186,6 +186,13 @@ table.t td a { display: inline-block; padding: 4px 0; }
 .goal { background: var(--sun); border-color: var(--sun); color: #2E3D52; }
 .goal a { color: #2E3D52; text-decoration: underline; }
 .goal .note, .goal .nv .u { color: #2E3D52; }
+/* dentro la scheda gialla tutto in blu notte, anche in tema scuro (prima i riquadri restavano scuri e illeggibili) */
+.goal h2, .goal .verdict-b .vt, .goal .verdict-b .vs, .goal .range, .goal .range b { color: #2E3D52; }
+.goal .verdict-b .vs { opacity: .85; }
+.goal .kpi { background: rgba(255, 255, 255, .55); border-color: transparent; color: #2E3D52; }
+.goal .kpi .l, .goal .kpi .nv, .goal .kpi .nv .dg, .goal .kpi .big { color: #2E3D52; }
+.goal .info summary { background: rgba(255, 255, 255, .6); color: #2E3D52; border-color: rgba(46, 61, 82, .3); }
+.goal .info[open] summary { background: #2E3D52; color: #fff; }
 .band-dark { background: var(--night); color: var(--on-night); border-radius: var(--r-l); padding: 18px; }
 @media (max-width: 860px) { .band-dark { margin: calc(-10px - env(safe-area-inset-top)) -16px 0; border-radius: 0 0 22px 22px; padding: calc(10px + env(safe-area-inset-top)) 16px 18px; } }
 .band-dark .topbar .logo { color: var(--on-night); }

@@ -43,6 +43,10 @@ describe("semaforo del recupero", () => {
     expect(f.level).toBe("rosso");
     expect(f.advice).toContain("malaria");
   });
+  it("seduta già fatta: il consiglio passa al recupero", () => {
+    const r = readiness({ ...base, session: { title: "6,5km di corsa facile", type: "facile", done: true }, hrv: days(10, () => 50), rhr: days(35, () => 55), sleep: days(5, () => 7.5 * 3600), feel: 4, context: [] });
+    expect(r.advice).toContain("fatta");
+  });
   it("senza dati: nessun giudizio inventato", () => {
     expect(readiness({ ...base, hrv: [], rhr: [], sleep: [], feel: null, context: [] }).level).toBe("na");
   });

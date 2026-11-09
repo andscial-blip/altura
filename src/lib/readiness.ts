@@ -27,7 +27,7 @@ export function readiness(i: {
   sleep: DayVal[];               // secondi di sonno per notte
   feel: number | null;           // 1-5, domanda del mattino
   context: Context[];
-  session: { title: string; type: string } | null;
+  session: { title: string; type: string; done?: boolean } | null;
   fmtSleep: (s: number) => string;
 }): Readiness {
   const signals: Signal[] = [];
@@ -100,5 +100,7 @@ export function readiness(i: {
     title = "Dati del recupero non ancora arrivati.";
     advice = ses ? `In programma ${ses}. Rispondi a «come ti senti» per avere un giudizio.` : "Rispondi a «come ti senti» per avere un giudizio.";
   }
+  // seduta di oggi già fatta: il consiglio riguarda il recupero, non la seduta
+  if (i.session?.done && !i.context.includes("febbre")) advice = `Seduta di oggi fatta (${ses}): ora recupero.`;
   return { level, title, advice, signals, softened, context: i.context };
 }

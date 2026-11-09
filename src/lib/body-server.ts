@@ -13,11 +13,11 @@ export async function bodyData(today: string, days = 70) {
   const ser = (m: string): DayVal[] => (dm[m] ?? []).map((p) => ({ day: p.day, value: validDaily(m, p.value) })).filter((p): p is DayVal => p.value !== null);
   const last = (m: string) => { const s = ser(m); return s[s.length - 1] ?? null; };
   const todayCk = ck.find((c) => c.day === today) ?? null;
-  const session = plan.find((p) => p.day === today && p.state === "programmato") ?? null;
+  const session = plan.find((p) => p.day === today && p.state === "programmato") ?? plan.find((p) => p.day === today && p.state === "completato") ?? null;
   const r = readiness({
     today, hrv: ser("hrv_night"), hrvLo: last("hrv_baseline_low")?.value ?? null, hrvHi: last("hrv_baseline_high")?.value ?? null,
     rhr: ser("resting_hr"), sleep: ser("sleep_s"), feel: todayCk?.feel ?? null, context: (todayCk?.context ?? []) as Context[],
-    session: session ? { title: session.title, type: session.type } : null, fmtSleep: hm,
+    session: session ? { title: session.title, type: session.type, done: session.state === "completato" } : null, fmtSleep: hm,
   });
   return { r, ser, last, checkin: todayCk, checkins: ck, session, checkinAvailable: ready };
 }
